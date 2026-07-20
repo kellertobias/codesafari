@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Enforce the lockfile so CI matches local installs.
+      - run: npm ci
+
+      - name: Typecheck (core)
+        run: npm run typecheck
+      - name: Typecheck (viewer)
+        run: npx tsc -p viewer/tsconfig.json
+
+      - name: Unit + integration tests
+        run: npm test
+
+      - name: Build core + viewer
+        run: npm run build
+
+      # Verify the packed artifact contains the prebuilt viewer and does not
+      # depend on source-only files.
+      - name: Verify package contents
+        run: |
+          npm pack --dry-run 2>&1 | tee pack.txt
+          grep -q "viewer-dist/index.html" pack.txt
+          grep -q "dist/cli.js" pack.txt
+
+      # Smoke-test the packed package's bin from a throwaway directory with no
+      # repo build artifacts on the path.
+      - name: Smoke-test packed bin
+        run: |
+          PKG=$(npm pack --silent)
+          TMP=$(mktemp -d)
+          cp "$PKG" "$TMP/"
+          cd "$TMP"
+          npm init -y >/dev/null
+          npm install "./$PKG" >/dev/null
+          npx codetour --help
+          npx codetour dev --help || true
+          # validate a tiny generated project
+          mkdir -p proj/.tour
+          printf -- '---\ntitle: Smoke\n---\nHi.\n' > proj/.tour/index.md
+          npx codetour validate proj
