@@ -11,6 +11,9 @@ on:
 
 jobs:
   build-and-test:
+    # GitHub-only. The Forgejo origin (git.tokenet.de) also reads
+    # .github/workflows, but this pipeline targets the GitHub mirror.
+    if: ${{ github.server_url == 'https://github.com' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

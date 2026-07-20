@@ -26,6 +26,9 @@ concurrency:
 jobs:
   build:
     name: Build static site
+    # GitHub-only (deploys to GitHub Pages). The Forgejo origin also reads
+    # .github/workflows, so guard against it running there.
+    if: ${{ github.server_url == 'https://github.com' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -54,6 +57,7 @@ jobs:
   deploy:
     name: Deploy to Pages
     needs: build
+    if: ${{ github.server_url == 'https://github.com' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages

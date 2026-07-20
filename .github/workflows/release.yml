@@ -20,6 +20,9 @@ permissions:
 jobs:
   release:
     name: Semantic Release
+    # GitHub-only (npm provenance + GitHub release). The Forgejo origin also
+    # reads .github/workflows, so guard against it running there.
+    if: ${{ github.server_url == 'https://github.com' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
