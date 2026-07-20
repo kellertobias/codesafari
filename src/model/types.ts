@@ -1,5 +1,5 @@
 /**
- * The renderer-neutral content model for a Code Tour project.
+ * The renderer-neutral content model for a CodeSafari project.
  *
  * These types are the contract between the CLI (which parses `.tour/` content
  * and inline `@tour` comments) and the React viewer (which renders the
@@ -158,7 +158,7 @@ export interface Diagnostic {
   line?: number;
 }
 
-/** The complete, frozen description of a Code Tour project. */
+/** The complete, frozen description of a CodeSafari project. */
 export interface Manifest {
   version: typeof MANIFEST_VERSION;
   project: ProjectMeta;

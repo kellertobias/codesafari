@@ -1,6 +1,6 @@
 ---
 title: Demo Project
-description: A tiny project used to exercise Code Tour.
+description: A tiny project used to exercise CodeSafari.
 defaultSnippetLines: 15
 repositoryUrl: https://example.com/demo
 ---

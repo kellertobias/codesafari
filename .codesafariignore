@@ -1,0 +1,6 @@
+# Test fixtures are standalone demo projects with their own @tour comments;
+# they are not part of CodeSafari's own self-hosted tour.
+tests/fixtures/
+
+# The built viewer bundle is generated output, not tour-able source.
+viewer-dist/

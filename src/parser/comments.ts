@@ -111,6 +111,11 @@ function dedent(lines: string[]): string[] {
   return lines.map((line) => (line.trim() === '' ? '' : line.slice(min)));
 }
 
+// @tour pipeline:3.2 Scanning @tour comments
+// The other half of the inputs — extracted from the code itself. This groups
+// runs of `//`, `#`, and `/* */` lines into blocks and keeps the ones whose
+// first line is a `@tour` header, returning each as a step or a callout. This
+// very comment is one of the blocks it would find.
 /**
  * Scan source text and return every `@tour` comment it contains, in file order.
  */

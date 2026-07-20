@@ -1,5 +1,5 @@
 /**
- * `codetour dev` server — serves the viewer and a live manifest, watches
+ * `codesafari dev` server — serves the viewer and a live manifest, watches
  * content, and pushes rebuild notifications over WebSocket.
  */
 
@@ -69,7 +69,7 @@ export async function runDev(root: string, options: DevOptions): Promise<void> {
   });
 
   await new Promise<void>((resolve) => server.listen(options.port, resolve));
-  console.log(`Code Tour dev server running at http://localhost:${options.port}`);
+  console.log(`CodeSafari dev server running at http://localhost:${options.port}`);
   console.log('Watching .tour/ and source files. Press Ctrl+C to stop.');
 }
 

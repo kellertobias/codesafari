@@ -64,7 +64,7 @@ export function App(): JSX.Element {
       {!isRunner && (
         <header className="topbar">
           <a className="brand" href={href('/')}>
-            code<span className="dot">·</span>tour
+            code<span className="dot">·</span>safari
           </a>
           <nav>
             <a href={href('/')}>Overview</a>
@@ -90,6 +90,11 @@ export function App(): JSX.Element {
   );
 }
 
+// @tour viewer:2 Client-side routing
+// A dependency-free hash router keeps the bundle small and the export portable.
+// The path segments after `#/` select the page: the overview, a component, the
+// glossary, a tour intro, or — when the third segment is `run` — the tour
+// runner. No server routes, so it works from a static file.
 function Router({
   manifest,
   segments,

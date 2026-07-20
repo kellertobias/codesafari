@@ -1,4 +1,4 @@
-/** `codetour export` — write a self-contained static site. */
+/** `codesafari export` — write a self-contained static site. */
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -16,6 +16,11 @@ export interface ExportResult {
   errors: number;
 }
 
+// @tour pipeline:5 Freezing a static site
+// The same manifest, made portable. `export` builds it with source content
+// bundled in, copies the prebuilt viewer, and writes the manifest as both JSON
+// and an inline `window.__CODESAFARI_MANIFEST__` script — so the exported site
+// runs from `file://` with no server and no network.
 /**
  * Build a frozen manifest with bundled source content, then copy the prebuilt
  * viewer and write the manifest alongside it. The result runs offline with no
@@ -60,7 +65,7 @@ export async function runExport(
   await fs.writeFile(path.join(outDir, 'data', 'manifest.json'), json, 'utf8');
   await fs.writeFile(
     path.join(outDir, 'data', 'manifest.js'),
-    `window.__CODETOUR_MANIFEST__ = ${json};`,
+    `window.__CODESAFARI_MANIFEST__ = ${json};`,
     'utf8',
   );
 

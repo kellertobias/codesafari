@@ -29,6 +29,11 @@ const CLASS_RE = /\b(class|interface|enum|struct|trait|impl)\b/;
 const FUNCTION_RE =
   /\b(function|fn|def|const|let|var)\b|=>|\basync\b|\bpublic\b|\bprivate\b|\bprotected\b/;
 
+// @tour pipeline:3.10 Resolving the highlight range
+// Note the step number: 3.10 sorts *after* 3.2, because ordering is dot-aware,
+// not decimal. Given the code that follows a comment, this picks what to
+// highlight — the whole class, the function, the block, or a snippet fallback —
+// using brace-matching for C-like languages and indentation for Python.
 /**
  * @param lines       Source split into lines (no trailing newline entries).
  * @param nextCodeLine 1-based line of the first code line after the comment, or
@@ -137,8 +142,17 @@ function snippetFallback(
 /** Map a file extension to a parser language hint. */
 export function languageForPath(path: string): Language {
   if (path.endsWith('.tsx')) return 'tsx';
-  if (path.endsWith('.ts') || path.endsWith('.mts') || path.endsWith('.cts')) {
-    return 'typescript';
+  if (
+    path.endsWith('.ts') ||
+    path.endsWith('.mts') ||
+    path.endsWith('.cts') ||
+    path.endsWith('.js') ||
+    path.endsWith('.jsx') ||
+    path.endsWith('.mjs') ||
+    path.endsWith('.cjs')
+  ) {
+    // .js/.jsx are highlighted as TS-family; block resolution is brace-based.
+    return path.endsWith('.tsx') || path.endsWith('.jsx') ? 'tsx' : 'typescript';
   }
   if (path.endsWith('.rs')) return 'rust';
   if (path.endsWith('.py')) return 'python';

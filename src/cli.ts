@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Command-line entrypoint for @codetour/local. */
+/** Command-line entrypoint for @kobisk/codesafari. */
 
 import { runValidate } from './commands/validate.js';
 import { runExport } from './commands/export.js';
@@ -11,19 +11,19 @@ interface ParsedArgs {
   flags: Map<string, string | boolean>;
 }
 
-const USAGE = `codetour — local, offline code-tour websites
+const USAGE = `codesafari — local, offline code-tour websites
 
 Usage:
-  codetour dev [root] [--port <n>]        Serve the viewer with live reload (default port 4317)
-  codetour export [root] [--out <dir>]    Write a static site (default ./codetour-site)
-  codetour validate [root]                Parse content and report problems
+  codesafari dev [root] [--port <n>]        Serve the viewer with live reload (default port 4317)
+  codesafari export [root] [--out <dir>]    Write a static site (default ./codesafari-site)
+  codesafari validate [root]                Parse content and report problems
 
 Arguments:
   root                                    Project directory (default: current directory)
 
 Options:
   --port <n>       Dev server port (default 4317)
-  --out <dir>      Export output directory (default codetour-site)
+  --out <dir>      Export output directory (default codesafari-site)
   -h, --help       Show this help
   -v, --version    Show version
 `;
@@ -54,6 +54,10 @@ function parseArgs(argv: string[]): ParsedArgs {
   return { command, positionals, flags };
 }
 
+// @tour pipeline:1 The CLI entry point
+// Every run starts here. `main` parses `argv` into a command, a positional
+// `root` (defaulting to the current directory), and flags, then dispatches to
+// one of the command modules. Follow the `validate` branch through this tour.
 async function main(): Promise<number> {
   const { command, positionals, flags } = parseArgs(process.argv.slice(2));
 
@@ -87,7 +91,7 @@ async function main(): Promise<number> {
       return result.ok ? 0 : 1;
     }
     case 'export': {
-      const out = String(flags.get('out') ?? 'codetour-site');
+      const out = String(flags.get('out') ?? 'codesafari-site');
       const result = await runExport(root, { out });
       return result.ok ? 0 : 1;
     }

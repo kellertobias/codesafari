@@ -8,9 +8,9 @@ describe('IgnoreMatcher', () => {
   let root: string;
 
   beforeAll(async () => {
-    root = await fs.mkdtemp(path.join(os.tmpdir(), 'codetour-ignore-'));
+    root = await fs.mkdtemp(path.join(os.tmpdir(), 'codesafari-ignore-'));
     await fs.writeFile(path.join(root, '.gitignore'), 'dist/\n*.log\n');
-    await fs.writeFile(path.join(root, '.codetourignore'), 'secret/\n');
+    await fs.writeFile(path.join(root, '.codesafariignore'), 'secret/\n');
     await fs.mkdir(path.join(root, '.tour'), { recursive: true });
   });
 
@@ -25,7 +25,7 @@ describe('IgnoreMatcher', () => {
     expect(m.ignores(path.join(root, 'src', 'a.ts'))).toBe(false);
   });
 
-  it('combines .codetourignore patterns', async () => {
+  it('combines .codesafariignore patterns', async () => {
     const m = await IgnoreMatcher.load(root);
     expect(m.ignores(path.join(root, 'secret', 'key.ts'))).toBe(true);
   });

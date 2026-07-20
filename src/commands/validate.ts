@@ -1,4 +1,4 @@
-/** `codetour validate` — parse all content and report problems. */
+/** `codesafari validate` — parse all content and report problems. */
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -11,6 +11,10 @@ export interface ValidateResult {
   warnings: number;
 }
 
+// @tour pipeline:2 Validating a project
+// `validate` is the simplest command and the best lens on the pipeline: it
+// confirms a `.tour/` directory exists, builds the manifest, prints every
+// diagnostic, and returns a non-zero exit code if any errors were found.
 /** Build the manifest and print diagnostics. Returns a pass/fail summary. */
 export async function runValidate(root: string): Promise<ValidateResult> {
   const resolved = path.resolve(root);

@@ -1,5 +1,5 @@
 /**
- * Path filtering using `.gitignore` + `.codetourignore`.
+ * Path filtering using `.gitignore` + `.codesafariignore`.
  *
  * Both files use gitignore syntax and are combined. `.tour/` content is always
  * kept, even when a broad pattern (e.g. `*.md`) would otherwise match it, so
@@ -15,7 +15,7 @@ import ignoreImport, { type Ignore } from 'ignore';
 // it as a namespace. Cast through `unknown` to a factory signature.
 const ignoreFactory = ignoreImport as unknown as (options?: unknown) => Ignore;
 
-const IGNORE_FILES = ['.gitignore', '.codetourignore'];
+const IGNORE_FILES = ['.gitignore', '.codesafariignore'];
 
 /** Directories that are always excluded regardless of ignore files. */
 const ALWAYS_IGNORE = ['.git', 'node_modules'];

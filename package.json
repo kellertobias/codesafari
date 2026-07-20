@@ -1,5 +1,5 @@
 {
-  "name": "@codetour/local",
+  "name": "@kobisk/codesafari",
   "version": "0.1.0",
   "description": "Turn a .tour/ folder plus inline @tour source comments into a local, offline code-tour website.",
   "keywords": [
@@ -13,7 +13,7 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "codetour": "dist/cli.js"
+    "codesafari": "dist/cli.js"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -44,6 +44,7 @@
   },
   "dependencies": {
     "chokidar": "^3.6.0",
+    "codehike": "^1.1.0",
     "gray-matter": "^4.0.3",
     "ignore": "^5.3.1",
     "mermaid": "^11.0.0",
@@ -55,7 +56,6 @@
     "@types/react-dom": "^18.3.7",
     "@types/ws": "^8.5.10",
     "@vitejs/plugin-react": "^4.7.0",
-    "highlight.js": "^11.11.1",
     "marked": "^18.0.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

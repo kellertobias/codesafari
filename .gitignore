@@ -3,5 +3,5 @@ dist/
 viewer-dist/
 *.log
 .DS_Store
-codetour-site/
+codesafari-site/
 coverage/

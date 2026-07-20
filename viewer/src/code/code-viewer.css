@@ -18,23 +18,21 @@
   overflow: auto;
   min-height: 0;
 }
+
+/* Code Hike renders <pre className="cv-code"> with its own theme colors via
+   the `style` prop (Monokai background/foreground). We own layout + gutter. */
 .cv-code {
   margin: 0;
   padding: 8px 0;
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.5;
-  color: var(--fg);
   tab-size: 2;
+  min-width: max-content;
 }
-.cv-code code {
-  background: none;
-  padding: 0;
-  display: block;
-}
+
 .cv-line {
   display: flex;
-  padding: 0;
   white-space: pre;
 }
 .cv-line-hit {
@@ -52,4 +50,5 @@
 .cv-content {
   flex: 1 1 auto;
   padding-right: 16px;
+  white-space: pre;
 }

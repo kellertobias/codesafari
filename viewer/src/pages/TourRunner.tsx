@@ -17,6 +17,11 @@ interface OpenTarget {
   highlight: LineRange | null;
 }
 
+// @tour viewer:3 The three-pane runner
+// This is the screen you're reading in. Left: the file tree over every bundled
+// source file. Center: the read-only code pane. Right: this step panel. The
+// `open` state powers "sneak around" — opening a file from the tree detaches the
+// pane from the current step until you pick a step again.
 export function TourRunner({
   manifest,
   slug,

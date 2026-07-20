@@ -57,6 +57,11 @@ export interface BuildResult {
 const rel = (root: string, abs: string) =>
   path.relative(root, abs).split(path.sep).join('/');
 
+// @tour pipeline:3 Assembling the manifest
+// The orchestrator. In order: load `.tour/` content, walk the non-ignored
+// source files, scan each for `@tour` comments, resolve every step's highlight
+// range, sort steps, validate cross-references, and (for export) bundle source.
+// The next few steps zoom into the pieces this function calls.
 export async function buildManifest(
   root: string,
   options: BuildOptions = {},
@@ -71,7 +76,8 @@ export async function buildManifest(
   }
 
   const callouts: SourceCallout[] = [];
-  const referencedFiles = new Set<string>();
+  /** Every non-ignored source file, so the viewer's tree can browse them all. */
+  const allSourceFiles = new Set<string>();
   const projectDefault = content.project.defaultSnippetLines;
 
   // 2–4. Scan source files for comments and resolve targets.
@@ -84,6 +90,7 @@ export async function buildManifest(
 
   for (const abs of sourceFiles.sort()) {
     const relPath = rel(root, abs);
+    allSourceFiles.add(relPath);
     let source: string;
     try {
       source = await fs.readFile(abs, 'utf8');
@@ -108,7 +115,6 @@ export async function buildManifest(
           file: relPath,
           line: comment.startLine,
         });
-        referencedFiles.add(relPath);
         continue;
       }
 
@@ -143,7 +149,6 @@ export async function buildManifest(
         anchor,
       };
       tour.steps.push(step);
-      referencedFiles.add(relPath);
     }
   }
 
@@ -179,7 +184,7 @@ export async function buildManifest(
   // 6. Bundle source content when exporting.
   let files: SourceFile[] = [];
   if (options.bundleSources) {
-    files = await bundleSources(root, referencedFiles, diagnostics);
+    files = await bundleSources(root, allSourceFiles, diagnostics);
   }
 
   const manifest: Manifest = {
@@ -197,6 +202,11 @@ export async function buildManifest(
   return { manifest, diagnostics };
 }
 
+// @tour pipeline:4 Checking cross-references
+// With steps attached, the builder verifies the graph holds together: tours
+// reference real components, and every `glossary:<slug>` link across all
+// Markdown bodies resolves to a defined concept. Broken links become warnings,
+// which is exactly what `validate` surfaces.
 function validateReferences(
   content: Awaited<ReturnType<typeof loadContent>>,
   tours: Tour[],

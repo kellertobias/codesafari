@@ -22,6 +22,10 @@ function segments(key: string): number[] {
  * lexicographic order relative to one another, so a malformed key never crashes
  * a sort.
  */
+// @tour comment Why compare segment-by-segment?
+// Treating "12.10" as a decimal would sort it *before* "12.2", which is almost
+// never what an author means. Comparing each dot-separated segment as its own
+// integer lets you slot a step in between two others without renumbering.
 export function compareOrder(a: string, b: string): number {
   const aValid = isValidOrderKey(a);
   const bValid = isValidOrderKey(b);

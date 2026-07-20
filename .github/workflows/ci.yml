@@ -47,9 +47,9 @@ jobs:
           cd "$TMP"
           npm init -y >/dev/null
           npm install "./$PKG" >/dev/null
-          npx codetour --help
-          npx codetour dev --help || true
+          npx codesafari --help
+          npx codesafari dev --help || true
           # validate a tiny generated project
           mkdir -p proj/.tour
           printf -- '---\ntitle: Smoke\n---\nHi.\n' > proj/.tour/index.md
-          npx codetour validate proj
+          npx codesafari validate proj

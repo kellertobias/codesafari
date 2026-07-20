@@ -39,6 +39,11 @@ export interface LoadedContent {
 const rel = (root: string, abs: string) =>
   path.relative(root, abs).split(path.sep).join('/');
 
+// @tour pipeline:3.1 Loading authored content
+// The authored half of the inputs. This reads `.tour/index.md`, every
+// component, tour, and glossary file, validating frontmatter and collecting
+// problems as diagnostics instead of throwing — so one bad file can't abort
+// the whole build.
 /** Load and validate all `.tour/` content under `root`. */
 export async function loadContent(root: string): Promise<LoadedContent> {
   const tourDir = path.join(root, '.tour');

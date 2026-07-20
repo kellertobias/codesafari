@@ -1,25 +1,37 @@
 /**
  * CodeViewer — the internal abstraction for the center code pane.
  *
- * The spec calls for evaluating Code Hike and Monaco behind a single
- * `CodeViewer` boundary. This is that boundary: pages depend only on the
- * {@link CodeViewerProps} contract, never on the renderer. v1 ships a
- * lightweight highlight.js-based renderer that satisfies the hard requirements —
- * full-file display, preserved line numbers, free scrolling ("sneak around"),
- * and arbitrary scroll-to-range with a highlighted band. Swapping in Monaco or
- * Code Hike later means replacing only this component.
+ * v1 renderer: **Code Hike** (`codehike/code`). We call its async `highlight()`
+ * primitive directly — no MDX, no React authoring — so authored tours stay
+ * pure Markdown while the viewer gets Code Hike's tokenizer, theming, and
+ * composable annotation handlers. Pages depend only on {@link CodeViewerProps};
+ * swapping renderers means replacing this file alone.
+ *
+ * Hard requirements this satisfies:
+ *   - Full-file display (never isolated snippets) — "sneak around" browsing.
+ *   - Preserved line numbers (a `line-numbers` annotation handler).
+ *   - Arbitrary scroll-to-range + highlight (a `mark` block annotation injected
+ *     for the requested range, plus scroll-into-view on change).
+ *   - Monokai theme (Code Hike's bundled `monokai`, offline via onig.wasm).
  */
 
-import { useEffect, useMemo, useRef } from 'react';
-import hljs from 'highlight.js/lib/common';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  highlight,
+  Pre,
+  InnerLine,
+  type AnnotationHandler,
+  type HighlightedCode,
+} from 'codehike/code';
 import type { LineRange } from '../../../src/model/types';
-import './highlight-monokai.css';
 import './code-viewer.css';
+
+const THEME = 'monokai';
 
 export interface CodeViewerProps {
   /** Full file content — always the complete file, never an isolated snippet. */
   content: string;
-  /** highlight.js language id, or undefined for auto-detection. */
+  /** Our language id (see languageForPath), or undefined. */
   language?: string;
   /** Range to highlight and scroll into view (1-based, inclusive). */
   highlight?: LineRange | null;
@@ -27,117 +39,127 @@ export interface CodeViewerProps {
   path: string;
 }
 
-/** Map our language ids to highlight.js language names. */
-function hljsLanguage(language?: string): string | undefined {
+/** Map our language ids to Code Hike / lighter language names. */
+function chLanguage(language?: string): string {
   switch (language) {
     case 'typescript':
       return 'typescript';
     case 'tsx':
-      return 'typescript';
+      return 'tsx';
     case 'rust':
       return 'rust';
     case 'python':
       return 'python';
     default:
-      return undefined;
+      return 'text';
   }
 }
 
+/** Prepend a line-number gutter to every line. */
+const lineNumbers: AnnotationHandler = {
+  name: 'line-numbers',
+  Line: (props) => (
+    <div className="cv-line">
+      <span className="cv-gutter">{props.lineNumber}</span>
+      <InnerLine merge={props} className="cv-content" />
+    </div>
+  ),
+};
+
+/**
+ * Highlight the lines covered by a `mark` block annotation and tag the first
+ * one so the viewer can scroll it into view.
+ */
+const markRange: AnnotationHandler = {
+  name: 'mark',
+  onlyIfAnnotated: true,
+  Line: ({ annotation, ...props }) => {
+    const hit = Boolean(annotation);
+    const isStart = hit && props.lineNumber === annotation!.fromLineNumber;
+    return (
+      <div
+        className={hit ? 'cv-line-hit' : undefined}
+        data-cv-mark-start={isStart ? '' : undefined}
+      >
+        <InnerLine merge={props} />
+      </div>
+    );
+  },
+};
+
+const HANDLERS = [markRange, lineNumbers];
+
+// @tour viewer:4 Rendering code with Code Hike
+// The end of the line — the component drawing this very pane. It calls Code
+// Hike's async `highlight()` on the full file, injects a `mark` block annotation
+// for the step's range, and renders through `<Pre>` with two handlers: one for
+// line numbers, one for the highlight band. Swapping renderers means changing
+// only this file, thanks to the CodeViewer abstraction.
 export function CodeViewer({
   content,
   language,
-  highlight,
+  highlight: range,
   path,
 }: CodeViewerProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const highlightRef = useRef<HTMLDivElement>(null);
+  const [highlighted, setHighlighted] = useState<HighlightedCode | null>(null);
 
-  // Highlight the whole file once per (content, language). Line-level
-  // highlighting is done by splitting the highlighted HTML per line so line
-  // numbers and the highlight band stay aligned.
-  const lines = useMemo(() => {
-    const lang = hljsLanguage(language);
-    let html: string;
-    try {
-      html = lang
-        ? hljs.highlight(content, { language: lang, ignoreIllegals: true }).value
-        : hljs.highlightAuto(content).value;
-    } catch {
-      html = escapeHtml(content);
-    }
-    return splitHighlightedLines(html);
+  // Tokenize the whole file whenever content/language changes.
+  useEffect(() => {
+    let alive = true;
+    highlight({ value: content, lang: chLanguage(language), meta: '' }, THEME)
+      .then((result) => {
+        if (alive) setHighlighted(result);
+      })
+      .catch(() => {
+        if (alive) setHighlighted(null);
+      });
+    return () => {
+      alive = false;
+    };
   }, [content, language]);
 
-  // Scroll the highlighted range into view whenever it changes.
-  useEffect(() => {
-    if (highlight && highlightRef.current && scrollRef.current) {
-      highlightRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    }
-  }, [highlight, path]);
+  // Inject a block annotation for the requested range without re-tokenizing.
+  const codeData = useMemo<HighlightedCode | null>(() => {
+    if (!highlighted) return null;
+    if (!range) return { ...highlighted, annotations: [] };
+    return {
+      ...highlighted,
+      annotations: [
+        {
+          name: 'mark',
+          query: '',
+          fromLineNumber: range.start,
+          toLineNumber: range.end,
+        },
+      ],
+    };
+  }, [highlighted, range]);
 
-  const start = highlight?.start ?? -1;
-  const end = highlight?.end ?? -1;
+  // Scroll the highlighted band into view whenever the range or file changes.
+  useEffect(() => {
+    if (!range || !scrollRef.current) return;
+    const start = scrollRef.current.querySelector('[data-cv-mark-start]');
+    start?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [range, path, codeData]);
 
   return (
     <div className="cv-root">
       <div className="cv-header">{path}</div>
       <div className="cv-scroll" ref={scrollRef}>
-        <pre className="cv-code">
-          <code>
-            {lines.map((lineHtml, i) => {
-              const lineNo = i + 1;
-              const isHit = lineNo >= start && lineNo <= end;
-              const isFirstHit = lineNo === start;
-              return (
-                <div
-                  key={i}
-                  className={`cv-line${isHit ? ' cv-line-hit' : ''}`}
-                  ref={isFirstHit ? highlightRef : undefined}
-                >
-                  <span className="cv-gutter">{lineNo}</span>
-                  <span
-                    className="cv-content"
-                    dangerouslySetInnerHTML={{ __html: lineHtml || '​' }}
-                  />
-                </div>
-              );
-            })}
-          </code>
-        </pre>
+        {codeData ? (
+          <Pre
+            className="cv-code"
+            code={codeData}
+            handlers={HANDLERS}
+            style={codeData.style}
+          />
+        ) : (
+          <div className="empty" style={{ padding: 16 }}>
+            Highlighting…
+          </div>
+        )}
       </div>
     </div>
   );
-}
-
-/**
- * Split highlight.js output into per-line HTML, re-opening any `<span>` scopes
- * that span multiple lines (e.g. block comments) so each line is valid markup.
- */
-function splitHighlightedLines(html: string): string[] {
-  const rawLines = html.split('\n');
-  const result: string[] = [];
-  const openTags: string[] = [];
-
-  const tagRe = /<span[^>]*>|<\/span>/g;
-
-  for (const line of rawLines) {
-    const prefix = openTags.join('');
-    let match: RegExpExecArray | null;
-    tagRe.lastIndex = 0;
-    while ((match = tagRe.exec(line)) !== null) {
-      if (match[0] === '</span>') openTags.pop();
-      else openTags.push(match[0]);
-    }
-    const suffix = '</span>'.repeat(openTags.length);
-    result.push(prefix + line + suffix);
-  }
-
-  return result;
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
 }
