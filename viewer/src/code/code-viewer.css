@@ -60,10 +60,24 @@
 .cv-line {
   display: flex;
   white-space: pre;
+  transition: opacity 0.15s ease;
 }
+/* Step mode: the focused range is banded. */
 .cv-line-hit {
   background: var(--highlight);
   box-shadow: inset 2px 0 0 0 var(--highlight-border);
+}
+/* Detail mode: the parent step is banded context… */
+.cv-line-context {
+  background: var(--highlight);
+}
+/* …the detail block reads as crisp regular text with an accent marker… */
+.cv-line-focus {
+  box-shadow: inset 2px 0 0 0 var(--highlight-border);
+}
+/* …and everything outside the parent step fades back. */
+.cv-line-dim {
+  opacity: 0.32;
 }
 .cv-gutter {
   flex: 0 0 auto;

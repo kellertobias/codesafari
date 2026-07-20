@@ -28,15 +28,27 @@ interface FileStore {
   tabs: string[];
   /** The focused tab's path, or null when nothing is open. */
   activePath: string | null;
-  /** The active highlight range (applies only to {@link highlightPath}). */
+  /** The active (focus) highlight range (applies only to {@link highlightPath}). */
   highlight: LineRange | null;
-  /** The file the current highlight belongs to. */
+  /**
+   * A wider surrounding range shown as banded context while the rest of the
+   * file is faded — used for detail sub-steps, where this is the parent step.
+   */
+  context: LineRange | null;
+  /** The file the current highlight/context belongs to. */
   highlightPath: string | null;
   treeOpen: boolean;
   /** Open/focus a file, optionally scrolling to a single line. */
   openFile: (path: string, line?: number) => void;
-  /** Open/focus a file and highlight an explicit range (tour steps/details). */
-  openRange: (path: string, range: LineRange | null) => void;
+  /**
+   * Open/focus a file and highlight an explicit range (tour steps/details).
+   * An optional `context` range is banded while everything outside it fades.
+   */
+  openRange: (
+    path: string,
+    range: LineRange | null,
+    context?: LineRange | null,
+  ) => void;
   /** Focus an already-open tab without changing its highlight. */
   activateTab: (path: string) => void;
   /** Close a tab; focus a neighbour if it was active. */
@@ -56,16 +68,21 @@ export function FileProvider({
   const [tabs, setTabs] = useState<string[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<LineRange | null>(null);
+  const [context, setContext] = useState<LineRange | null>(null);
   const [highlightPath, setHighlightPath] = useState<string | null>(null);
   const [treeOpen, setTreeOpen] = useState(false);
 
-  const openRange = useCallback((path: string, range: LineRange | null) => {
-    // Append to the right if the file isn't already open.
-    setTabs((prev) => (prev.includes(path) ? prev : [...prev, path]));
-    setActivePath(path);
-    setHighlight(range);
-    setHighlightPath(range ? path : null);
-  }, []);
+  const openRange = useCallback(
+    (path: string, range: LineRange | null, ctx: LineRange | null = null) => {
+      // Append to the right if the file isn't already open.
+      setTabs((prev) => (prev.includes(path) ? prev : [...prev, path]));
+      setActivePath(path);
+      setHighlight(range);
+      setContext(ctx);
+      setHighlightPath(range ? path : null);
+    },
+    [],
+  );
 
   const openFile = useCallback(
     (path: string, line?: number) => {
@@ -101,6 +118,7 @@ export function FileProvider({
       tabs,
       activePath,
       highlight,
+      context,
       highlightPath,
       treeOpen,
       openFile,
@@ -114,6 +132,7 @@ export function FileProvider({
       tabs,
       activePath,
       highlight,
+      context,
       highlightPath,
       treeOpen,
       openFile,

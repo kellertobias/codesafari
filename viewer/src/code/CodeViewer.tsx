@@ -34,12 +34,22 @@ export interface CodeViewerProps {
   content: string;
   /** Our language id (see languageForPath), or undefined. */
   language?: string;
-  /** Range to highlight and scroll into view (1-based, inclusive). */
+  /** The focus range: highlighted/scrolled-to (1-based, inclusive). */
   highlight?: LineRange | null;
+  /**
+   * A wider surrounding range. When present the view enters "detail" mode: this
+   * range is banded as context, the focus reads as regular (crisp) text within
+   * it, and everything outside is faded.
+   */
+  context?: LineRange | null;
   /** Path shown in the header. */
   path: string;
   /** When provided, a ✕ close control is shown in the header. */
   onClose?: () => void;
+}
+
+function inRange(n: number, r?: LineRange | null): boolean {
+  return !!r && n >= r.start && n <= r.end;
 }
 
 /** Map our language ids to Code Hike / lighter language names. */
@@ -58,39 +68,49 @@ function chLanguage(language?: string): string {
   }
 }
 
-/** Prepend a line-number gutter to every line. */
-const lineNumbers: AnnotationHandler = {
-  name: 'line-numbers',
-  Line: (props) => (
-    <div className="cv-line">
-      <span className="cv-gutter">{props.lineNumber}</span>
-      <InnerLine merge={props} className="cv-content" />
-    </div>
-  ),
-};
-
 /**
- * Highlight the lines covered by a `mark` block annotation and tag the first
- * one so the viewer can scroll it into view.
+ * Build the per-line handler for the current focus/context ranges. Every line
+ * gets a gutter number and a class deciding its emphasis:
+ *
+ *   - Step mode (no context): the focus range is banded, the rest is normal.
+ *   - Detail mode (context set): the context range is banded, the focus reads
+ *     as crisp regular text within it, and everything outside is faded.
  */
-const markRange: AnnotationHandler = {
-  name: 'mark',
-  onlyIfAnnotated: true,
-  Line: ({ annotation, ...props }) => {
-    const hit = Boolean(annotation);
-    const isStart = hit && props.lineNumber === annotation!.fromLineNumber;
-    return (
-      <div
-        className={hit ? 'cv-line-hit' : undefined}
-        data-cv-mark-start={isStart ? '' : undefined}
-      >
-        <InnerLine merge={props} />
-      </div>
-    );
-  },
-};
-
-const HANDLERS = [markRange, lineNumbers];
+function buildHandlers(
+  focus: LineRange | null | undefined,
+  context: LineRange | null | undefined,
+): AnnotationHandler[] {
+  const detailMode = !!context;
+  const handler: AnnotationHandler = {
+    name: 'cv-line',
+    Line: (props) => {
+      const n = props.lineNumber;
+      const isFocus = inRange(n, focus);
+      let mod = '';
+      if (detailMode) {
+        mod = isFocus
+          ? 'cv-line-focus'
+          : inRange(n, context)
+            ? 'cv-line-context'
+            : 'cv-line-dim';
+      } else if (isFocus) {
+        mod = 'cv-line-hit';
+      }
+      const isFocusStart = isFocus && n === focus!.start;
+      return (
+        <div
+          className={`cv-line${mod ? ` ${mod}` : ''}`}
+          data-cv-focus={isFocus ? '' : undefined}
+          data-cv-mark-start={isFocusStart ? '' : undefined}
+        >
+          <span className="cv-gutter">{n}</span>
+          <InnerLine merge={props} className="cv-content" />
+        </div>
+      );
+    },
+  };
+  return [handler];
+}
 
 // @tour viewer:4 Rendering code with Code Hike
 // The end of the line — the component drawing this very pane. It calls Code
@@ -102,6 +122,7 @@ export function CodeViewer({
   content,
   language,
   highlight: range,
+  context,
   path,
   onClose,
 }: CodeViewerProps): JSX.Element {
@@ -131,22 +152,16 @@ export function CodeViewer({
     };
   }, [content, language]);
 
-  // Only render once the tokens match the current file.
+  // Only render once the tokens match the current file. Line emphasis is done
+  // by the handlers (by line number), so no annotations are injected.
   const ready = tokenized?.content === content ? tokenized.result : null;
+  const codeData = useMemo<HighlightedCode | null>(
+    () => (ready ? { ...ready, annotations: [] } : null),
+    [ready],
+  );
 
-  // Inject a block annotation for the requested range without re-tokenizing.
-  const codeData = useMemo<HighlightedCode | null>(() => {
-    if (!ready) return null;
-    if (!range) return { ...ready, annotations: [] };
-    // Clamp to the file's line count as a defensive guard.
-    const totalLines = content.split('\n').length;
-    const start = Math.max(1, Math.min(range.start, totalLines));
-    const end = Math.max(start, Math.min(range.end, totalLines));
-    return {
-      ...ready,
-      annotations: [{ name: 'mark', query: '', fromLineNumber: start, toLineNumber: end }],
-    };
-  }, [ready, range, content]);
+  // Rebuild the per-line handler when the focus/context ranges change.
+  const handlers = useMemo(() => buildHandlers(range, context), [range, context]);
 
   // Scroll to the target. Within the same file we glide (smooth scroll); when
   // switching to a different file (or first paint) we jump. Gated on codeData so
@@ -163,21 +178,33 @@ export function CodeViewer({
       if (!sameFile) scroller.scrollTop = 0;
       return;
     }
-    // rAF so the freshly-rendered annotation is laid out before we measure.
+    // rAF so the freshly-rendered lines are laid out before we measure.
     const raf = requestAnimationFrame(() => {
-      const target = scroller.querySelector<HTMLElement>('[data-cv-mark-start]');
-      if (!target) return;
-      const sRect = scroller.getBoundingClientRect();
-      const tRect = target.getBoundingClientRect();
-      const top =
-        scroller.scrollTop +
-        (tRect.top - sRect.top) -
-        scroller.clientHeight / 2 +
-        tRect.height / 2;
+      const hits = scroller.querySelectorAll<HTMLElement>('[data-cv-focus]');
+      if (hits.length === 0) return;
+      const sTop = scroller.getBoundingClientRect().top;
+      // Content-absolute top/bottom of the highlighted block.
+      const blockTop =
+        hits[0].getBoundingClientRect().top - sTop + scroller.scrollTop;
+      const blockBottom =
+        hits[hits.length - 1].getBoundingClientRect().bottom -
+        sTop +
+        scroller.scrollTop;
+      const blockHeight = blockBottom - blockTop;
+      const viewHeight = scroller.clientHeight;
+
+      let top: number;
+      if (blockHeight <= viewHeight) {
+        // The whole block fits: center it so all of it is on screen.
+        top = blockTop - (viewHeight - blockHeight) / 2;
+      } else {
+        // Taller than the viewport: show the start near the top.
+        top = blockTop - Math.min(viewHeight * 0.1, 40);
+      }
       scroller.scrollTo({ top: Math.max(0, top), behavior });
     });
     return () => cancelAnimationFrame(raf);
-  }, [range, path, codeData]);
+  }, [range, context, path, codeData]);
 
   return (
     <div className="cv-root">
@@ -194,7 +221,7 @@ export function CodeViewer({
           <Pre
             className="cv-code"
             code={codeData}
-            handlers={HANDLERS}
+            handlers={handlers}
             style={codeData.style}
           />
         ) : (

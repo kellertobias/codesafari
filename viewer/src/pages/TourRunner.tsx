@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Manifest } from '../../../src/model/types';
 import { Markdown } from '../Markdown';
 import { useFileStore } from '../fileStore';
-import { href } from '../router';
+import { href, navigate } from '../router';
 
 /** A position in the flattened step/detail navigation sequence. */
 interface Pos {
@@ -62,11 +62,16 @@ export function TourRunner({
     [flat],
   );
 
-  // Drive the left code surface to the current step/detail target.
+  // Drive the left code surface to the current step/detail target. On a detail,
+  // the parent step is passed as banded context so it stays in focus while the
+  // rest of the file fades.
   useEffect(() => {
     if (!currentStep) return;
-    const range = currentDetail ? currentDetail.highlight : currentStep.highlight;
-    openRange(currentStep.file, range);
+    if (currentDetail) {
+      openRange(currentStep.file, currentDetail.highlight, currentStep.highlight);
+    } else {
+      openRange(currentStep.file, currentStep.highlight);
+    }
   }, [currentStep, currentDetail, openRange]);
 
   // Keyboard navigation: left/right arrows move through the sequence.
@@ -124,10 +129,13 @@ export function TourRunner({
             <button
               className="link-button"
               onClick={() =>
-                openRange(
-                  currentStep.file,
-                  currentDetail ? currentDetail.highlight : currentStep.highlight,
-                )
+                currentDetail
+                  ? openRange(
+                      currentStep.file,
+                      currentDetail.highlight,
+                      currentStep.highlight,
+                    )
+                  : openRange(currentStep.file, currentStep.highlight)
               }
             >
               return to step
@@ -194,6 +202,11 @@ export function TourRunner({
         >
           Next →
         </button>
+        {posIndex >= flat.length - 1 && flat.length > 0 && (
+          <button className="btn secondary" onClick={() => navigate('/')}>
+            Go to overview
+          </button>
+        )}
         <span className="spacer" style={{ flex: 1 }} />
         <span className="step-counter">
           {flat.length === 0 ? '0 / 0' : `${posIndex + 1} / ${flat.length}`}

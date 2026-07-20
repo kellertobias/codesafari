@@ -23,6 +23,7 @@ export function ExplorerPane(): JSX.Element {
     tabs,
     activePath,
     highlight,
+    context,
     highlightPath,
     treeOpen,
     openFile,
@@ -39,8 +40,10 @@ export function ExplorerPane(): JSX.Element {
   }, [files]);
 
   const activeFile = activePath ? fileByPath.get(activePath) : undefined;
-  // A highlight only applies to the file it was opened for.
-  const activeHighlight = activePath === highlightPath ? highlight : null;
+  // A highlight/context only applies to the file it was opened for.
+  const onActiveFile = activePath === highlightPath;
+  const activeHighlight = onActiveFile ? highlight : null;
+  const activeContext = onActiveFile ? context : null;
 
   // Drag-to-resize the tree pane.
   const onDragStart = useCallback((e: React.PointerEvent) => {
@@ -113,6 +116,7 @@ export function ExplorerPane(): JSX.Element {
               content={activeFile.content}
               language={activeFile.language}
               highlight={activeHighlight}
+              context={activeContext}
               path={activeFile.path}
             />
           ) : (
