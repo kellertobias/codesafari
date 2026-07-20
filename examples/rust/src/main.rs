@@ -12,7 +12,7 @@ use std::collections::HashMap;
  * gives a mutable slot — inserting 0 the first time a word is seen, then
  * handing back the existing count on later hits.
  *
- * (Anchored with a doc-block `/** ... *\/` comment.)
+ * (Anchored with a doc-block comment — the doc-comment style.)
  */
 fn word_counts(text: &str) -> HashMap<&str, u32> {
     let mut counts = HashMap::new();
@@ -27,7 +27,7 @@ fn word_counts(text: &str) -> HashMap<&str, u32> {
  * A HashMap has no order, so we collect into a vec and sort by count descending
  * before printing — deterministic output the reader can rely on.
  *
- * (Anchored with a ranged block `/* ... *\/` comment.)
+ * (Anchored with a ranged block comment — the plain block style.)
  */
 fn main() {
     let text = "the cat sat on the mat the cat purred";

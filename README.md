@@ -130,6 +130,10 @@ function enqueue(job: Job) { /* ... */ }
 // This map is not thread-safe.
 ```
 
+A callout is scoped to the step section it follows — it appears only while you're
+on the nearest step above it in the file. A callout placed before every step in a
+file applies to the whole file and shows whenever that file is open.
+
 ### How a step resolves its highlight
 
 Given a step comment, the target range is chosen by what directly follows it:

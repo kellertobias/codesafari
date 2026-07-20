@@ -2,10 +2,12 @@
 
 import type { Manifest } from '../../../src/model/types';
 import { Markdown } from '../Markdown';
+import { useGlossary } from '../glossaryStore';
 import { href } from '../router';
 
 export function Landing({ manifest }: { manifest: Manifest }): JSX.Element {
   const { project, components, tours, glossary } = manifest;
+  const { openGlossary } = useGlossary();
   return (
     <div className="page">
       <h1>{project.title}</h1>
@@ -52,9 +54,9 @@ export function Landing({ manifest }: { manifest: Manifest }): JSX.Element {
         <>
           <h2 className="section-title">Glossary</h2>
           <p>
-            <a className="btn secondary" href={href('/glossary')}>
+            <button className="btn secondary" onClick={() => openGlossary()}>
               Browse {glossary.length} concept{glossary.length === 1 ? '' : 's'}
-            </a>
+            </button>
           </p>
         </>
       )}

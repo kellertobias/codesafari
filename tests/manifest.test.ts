@@ -59,6 +59,18 @@ describe('buildManifest (integration, demo fixture)', () => {
     expect(manifest.callouts[0].title).toBe('Watch out');
   });
 
+  it('scopes a callout to the step section it falls under', async () => {
+    const { manifest } = await buildManifest(demoRoot);
+    const tour = manifest.tours.find((t) => t.slug === 'onboarding')!;
+    const drain = tour.steps.find((s) => s.order === '12.10')!;
+
+    // The "Watch out" callout sits after the 12.10 step in worker.ts, so it
+    // belongs to that section (its comment line), not the whole file.
+    const callout = manifest.callouts[0];
+    expect(callout.file).toBe('src/worker.ts');
+    expect(callout.sectionLine).toBe(drain.commentLine);
+  });
+
   it('bundles source content only when requested', async () => {
     const plain = await buildManifest(demoRoot);
     expect(plain.manifest.files).toHaveLength(0);

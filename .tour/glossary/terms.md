@@ -34,7 +34,8 @@ even when a broad pattern like `*.md` would otherwise match it. Implemented in
 
 A non-navigable, styled source annotation written as `@tour comment <title>`.
 Unlike a step, it never appears in the tour's next/previous navigation; instead
-it's shown alongside the file it annotates. Great for "watch out" notes.
+it's shown alongside the step section it follows (or file-wide when authored
+before every step). Great for "watch out" notes.
 
 ## Code Hike
 

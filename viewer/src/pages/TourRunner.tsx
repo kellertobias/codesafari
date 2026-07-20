@@ -83,8 +83,16 @@ export function TourRunner({
 
   const browsingAway =
     !!currentStep && activePath !== null && activePath !== currentStep.file;
+  // A callout shows only under the step section it belongs to (its `sectionLine`
+  // matches the current step). File-wide callouts (`sectionLine === null`, i.e.
+  // authored before every step) show whenever their file is open.
   const calloutsForFile = activePath
-    ? manifest.callouts.filter((c) => c.file === activePath)
+    ? manifest.callouts.filter(
+        (c) =>
+          c.file === activePath &&
+          (c.sectionLine === null ||
+            (!browsingAway && currentStep?.commentLine === c.sectionLine)),
+      )
     : [];
 
   return (

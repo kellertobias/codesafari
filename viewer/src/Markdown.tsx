@@ -9,6 +9,7 @@ import { useEffect, useRef } from 'react';
 import { marked } from 'marked';
 import mermaid from 'mermaid';
 import { useFileStore } from './fileStore';
+import { useGlossary } from './glossaryStore';
 
 let mermaidReady = false;
 function ensureMermaid(): void {
@@ -37,10 +38,10 @@ function renderMarkdown(source: string): string {
     const text = this.parser.parseInline(tokens);
     const titleAttr = title ? ` title="${escapeAttr(title)}"` : '';
 
-    // Glossary concept → in-app route.
+    // Glossary concept → open the glossary side-panel (handled on click).
     if (href.startsWith('glossary:')) {
       const slug = href.slice('glossary:'.length);
-      return `<a href="#/glossary#${escapeAttr(slug)}"${titleAttr}>${text}</a>`;
+      return `<a href="#" class="glossary-link" data-glossary="${escapeAttr(slug)}"${titleAttr}>${text}</a>`;
     }
 
     // External or in-app hash links → normal anchors.
@@ -112,6 +113,7 @@ function escapeAttr(text: string): string {
 export function Markdown({ source }: MarkdownProps): JSX.Element {
   const ref = useRef<HTMLDivElement>(null);
   const { openFile } = useFileStore();
+  const { openGlossary } = useGlossary();
   const html = renderMarkdown(source);
 
   // Render any Mermaid diagrams after the HTML mounts.
@@ -138,15 +140,25 @@ export function Markdown({ source }: MarkdownProps): JSX.Element {
     });
   }, [html]);
 
-  // Intercept file-reference clicks and open them in the left code surface.
+  // Intercept in-app links: file references open on the left code surface,
+  // glossary links open the glossary side-panel. Everything else is a normal
+  // anchor handled by the browser.
   const onClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const anchor = (e.target as HTMLElement).closest<HTMLAnchorElement>('a.file-link');
-    if (!anchor) return;
-    e.preventDefault();
-    const path = anchor.dataset.file;
-    if (!path) return;
-    const line = anchor.dataset.line ? Number(anchor.dataset.line) : undefined;
-    openFile(path, line);
+    const target = e.target as HTMLElement;
+
+    const glossaryLink = target.closest<HTMLAnchorElement>('a.glossary-link');
+    if (glossaryLink) {
+      e.preventDefault();
+      openGlossary(glossaryLink.dataset.glossary);
+      return;
+    }
+
+    const fileLink = target.closest<HTMLAnchorElement>('a.file-link');
+    if (fileLink?.dataset.file) {
+      e.preventDefault();
+      const line = fileLink.dataset.line ? Number(fileLink.dataset.line) : undefined;
+      openFile(fileLink.dataset.file, line);
+    }
   };
 
   return (

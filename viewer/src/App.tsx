@@ -5,10 +5,11 @@ import type { Manifest } from '../../src/model/types';
 import { isDevMode, loadManifest } from './manifest';
 import { href, useRoute } from './router';
 import { FileProvider, useFileStore } from './fileStore';
+import { GlossaryProvider, useGlossary } from './glossaryStore';
 import { ExplorerPane } from './ExplorerPane';
+import { GlossaryPanel } from './GlossaryPanel';
 import { Landing } from './pages/Landing';
 import { ComponentDetail } from './pages/ComponentDetail';
-import { Glossary } from './pages/Glossary';
 import { TourIntro } from './pages/TourIntro';
 import { TourRunner } from './pages/TourRunner';
 
@@ -59,7 +60,9 @@ export function App(): JSX.Element {
 
   return (
     <FileProvider files={manifest.files}>
-      <Shell manifest={manifest} route={route} />
+      <GlossaryProvider>
+        <Shell manifest={manifest} route={route} />
+      </GlossaryProvider>
     </FileProvider>
   );
 }
@@ -77,6 +80,7 @@ function Shell({
   route: ReturnType<typeof useRoute>;
 }): JSX.Element {
   const { closeAll, keepFilesOpen, setKeepFilesOpen } = useFileStore();
+  const { openGlossary } = useGlossary();
 
   // On the overview (no segments) or a tour intro (`/tour/:slug`, not `/run`),
   // collapse the code surface unless the user chose to keep it open.
@@ -99,7 +103,11 @@ function Shell({
         </a>
         <nav>
           <a href={href('/')}>Overview</a>
-          {manifest.glossary.length > 0 && <a href={href('/glossary')}>Glossary</a>}
+          {manifest.glossary.length > 0 && (
+            <button className="navlink" onClick={() => openGlossary()}>
+              Glossary
+            </button>
+          )}
         </nav>
         <span className="spacer" />
         <label className="keep-files" title="Keep open files when returning to the overview">
@@ -126,6 +134,7 @@ function Shell({
         <main className="route">
           <Router manifest={manifest} segments={route.segments} />
         </main>
+        <GlossaryPanel concepts={manifest.glossary} />
       </div>
     </div>
   );
@@ -148,8 +157,6 @@ function Router({
   switch (head) {
     case undefined:
       return <Landing manifest={manifest} />;
-    case 'glossary':
-      return <Glossary manifest={manifest} />;
     case 'component':
       return <ComponentDetail manifest={manifest} slug={a ?? ''} />;
     case 'tour':

@@ -94,6 +94,14 @@ export interface SourceCallout {
   body: string;
   file: string;
   line: number;
+  /**
+   * The `commentLine` of the tour step this callout falls under — the nearest
+   * step whose comment precedes it in the same file. `null` when the callout
+   * comes before every step in its file, in which case it applies file-wide.
+   * The viewer uses this to scope a callout to its section rather than the
+   * whole file.
+   */
+  sectionLine: number | null;
 }
 
 /** A tour entry page, from `.tour/tours/**\/*.md`, plus its resolved steps. */

@@ -86,10 +86,12 @@ export async function buildManifest(
     diagnostics,
   );
 
-  // 4. Nest each detail under its enclosing step, then sort/validate tours.
+  // 4. Nest each detail under its enclosing step, sort/validate tours, then
+  //    scope each callout to the step section it falls under.
   const tours = [...tourBySlug.values()];
   assignDetails(scan.pendingDetails, tours, diagnostics);
   finalizeTours(tours, diagnostics);
+  scopeCallouts(scan.callouts, tours);
 
   // 5. Validate cross-references.
   validateReferences(content, tours, diagnostics);
@@ -164,6 +166,7 @@ async function scanSources(
           body: comment.body,
           file: relPath,
           line: comment.startLine,
+          sectionLine: null, // resolved by scopeCallouts once steps are known
         });
       } else if (comment.kind === 'detail') {
         result.pendingDetails.push({
@@ -275,6 +278,29 @@ function finalizeTours(tours: Tour[], diagnostics: Diagnostic[]): void {
         message: `Tour "${tour.slug}" has no steps (no matching @tour comments).`,
       });
     }
+  }
+}
+
+/**
+ * Assign each callout to the step section it belongs to: the nearest step in the
+ * same file whose comment precedes it. Callouts before every step in their file
+ * keep `sectionLine: null` and so apply file-wide.
+ */
+function scopeCallouts(callouts: SourceCallout[], tours: Tour[]): void {
+  const stepLinesByFile = new Map<string, number[]>();
+  for (const tour of tours) {
+    for (const step of tour.steps) {
+      const lines = stepLinesByFile.get(step.file) ?? [];
+      lines.push(step.commentLine);
+      stepLinesByFile.set(step.file, lines);
+    }
+  }
+
+  for (const callout of callouts) {
+    const preceding = (stepLinesByFile.get(callout.file) ?? []).filter(
+      (line) => line < callout.line,
+    );
+    callout.sectionLine = preceding.length > 0 ? Math.max(...preceding) : null;
   }
 }
 

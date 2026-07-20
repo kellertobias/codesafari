@@ -90,7 +90,20 @@ button {
 }
 .topbar nav {
   display: flex;
+  align-items: center;
   gap: 14px;
+}
+/* A nav entry that acts (opening a panel) rather than navigates, styled as a link. */
+.navlink {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+.navlink:hover {
+  text-decoration: underline;
 }
 .topbar .spacer {
   flex: 1;
@@ -124,6 +137,9 @@ button {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* The full-width scroll container: the scrollbar sits at the region's right
+     edge and the wheel scrolls anywhere over it, even beside the narrow page. */
+  overflow-y: auto;
 }
 
 /* The surface's parts join `.body`'s flex row directly, so the fixed-width
@@ -169,13 +185,14 @@ button {
   border-bottom: 1px solid var(--border);
 }
 
+/* A narrow, centered content column. Scrolling is owned by the full-width
+   `.route` above, so the column stays readable while the scrollbar stays at the
+   edge. */
 .page {
   padding: 28px 32px;
   max-width: 900px;
-  margin: 0 auto;
   width: 100%;
-  flex: 1 1 auto;
-  overflow-y: auto;
+  margin: 0 auto;
 }
 
 .page h1 {
@@ -591,6 +608,84 @@ button {
   margin-right: 3px;
   font-size: 0.85em;
   color: var(--fg-dim);
+}
+
+/* ---- Glossary side-panel (right drawer) ---- */
+.glossary-panel {
+  flex: 0 0 360px;
+  min-height: 0;
+  max-width: 60%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+}
+.glossary-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.glossary-title {
+  color: var(--fg-dim);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.glossary-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  color: var(--fg-dim);
+  border-radius: 4px;
+}
+.glossary-close:hover {
+  background: var(--bg-elev);
+  color: var(--fg);
+}
+.glossary-search {
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.glossary-search input {
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+.glossary-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.glossary-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 16px 20px;
+}
+.glossary-concept {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.glossary-concept:last-child {
+  border-bottom: none;
+}
+.glossary-concept h3 {
+  margin: 0 0 4px;
+  color: var(--orange);
+  font-size: 15px;
 }
 
 /* ---- Scrollbars (Monokai, thin, consistent everywhere) ---- */
