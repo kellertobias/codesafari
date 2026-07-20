@@ -99,11 +99,69 @@ button {
   color: var(--fg-dim);
 }
 
+/* ---- Shell: left code surface | right content ---- */
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+.route {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The surface's parts join `.body`'s flex row directly, so the fixed-width
+   activity bar and tree never eat into the code pane's share of the space. */
+.explorer {
+  display: contents;
+}
+.activity-bar {
+  flex: 0 0 48px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.activity-btn {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-left: 2px solid transparent;
+  color: var(--fg-dim);
+  border-radius: 6px;
+}
+.activity-btn:hover {
+  color: var(--fg);
+  background: var(--bg-elev);
+}
+.activity-btn.active {
+  color: var(--accent);
+  border-left-color: var(--accent);
+}
+.pane-header {
+  padding: 8px 14px;
+  color: var(--fg-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--border);
+}
+
 .page {
   padding: 28px 32px;
   max-width: 900px;
   margin: 0 auto;
   width: 100%;
+  flex: 1 1 auto;
   overflow-y: auto;
 }
 
@@ -200,32 +258,23 @@ button {
   padding: 6px 10px;
 }
 
-/* ---- Tour runner (3-pane) ---- */
-.runner {
-  display: grid;
-  grid-template-columns: 240px 1fr 380px;
-  height: 100%;
-  min-height: 0;
-  flex: 1 1 auto;
-}
+/* ---- Code surface panes ---- */
 .pane {
   min-height: 0;
+}
+.explorer .pane.tree {
+  flex: 0 0 240px;
   overflow: auto;
+  background: var(--bg-panel);
   border-right: 1px solid var(--border);
 }
-.pane.tree {
-  background: var(--bg-panel);
-  padding: 8px 0;
-}
-.pane.code {
+.explorer .pane.code {
+  flex: 1 1 0;
+  min-width: 220px;
   background: var(--bg);
-  padding: 0;
-}
-.pane.tour {
-  background: var(--bg-elev);
-  border-right: none;
   display: flex;
   flex-direction: column;
+  border-right: 1px solid var(--border);
 }
 
 /* File tree (VS Code-like nested tree) */
@@ -301,7 +350,14 @@ button {
   text-decoration: underline;
 }
 
-/* Tour panel */
+/* Tour panel (right side of the shell during a running tour) */
+.tour-panel.standalone {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+}
 .tour-panel-head {
   padding: 16px 20px;
   border-bottom: 1px solid var(--border);
@@ -372,4 +428,45 @@ button {
   color: #fff;
   padding: 6px 18px;
   font-size: 13px;
+}
+
+/* File-reference links open in the left code surface. */
+.md a.file-link {
+  color: var(--accent-2);
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.md a.file-link::before {
+  content: '\25B8'; /* ▸ */
+  margin-right: 3px;
+  font-size: 0.85em;
+  color: var(--fg-dim);
+}
+
+/* ---- Scrollbars (Monokai, thin, consistent everywhere) ---- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: 7px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: #57564a;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
 }

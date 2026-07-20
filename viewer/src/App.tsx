@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import type { Manifest } from '../../src/model/types';
 import { isDevMode, loadManifest } from './manifest';
 import { href, useRoute } from './router';
+import { FileProvider } from './fileStore';
+import { ExplorerPane } from './ExplorerPane';
 import { Landing } from './pages/Landing';
 import { ComponentDetail } from './pages/ComponentDetail';
 import { Glossary } from './pages/Glossary';
@@ -55,13 +57,12 @@ export function App(): JSX.Element {
     return <div className="page"><p className="empty">Loading…</p></div>;
   }
 
-  const isRunner =
-    route.segments[0] === 'tour' && route.segments[2] === 'run';
-
   return (
-    <div className="app">
-      {isDevMode() && <div className="banner">Live dev mode — edits reload automatically.</div>}
-      {!isRunner && (
+    <FileProvider files={manifest.files}>
+      <div className="app">
+        {isDevMode() && (
+          <div className="banner">Live dev mode — edits reload automatically.</div>
+        )}
         <header className="topbar">
           <a className="brand" href={href('/')}>
             code<span className="dot">·</span>safari
@@ -82,11 +83,14 @@ export function App(): JSX.Element {
             </a>
           )}
         </header>
-      )}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        <Router manifest={manifest} segments={route.segments} />
+        <div className="body">
+          <ExplorerPane />
+          <main className="route">
+            <Router manifest={manifest} segments={route.segments} />
+          </main>
+        </div>
       </div>
-    </div>
+    </FileProvider>
   );
 }
 

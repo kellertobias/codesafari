@@ -24,6 +24,7 @@ import {
   type HighlightedCode,
 } from 'codehike/code';
 import type { LineRange } from '../../../src/model/types';
+import { CloseIcon } from '../tree/icons';
 import './code-viewer.css';
 
 const THEME = 'monokai';
@@ -37,6 +38,8 @@ export interface CodeViewerProps {
   highlight?: LineRange | null;
   /** Path shown in the header. */
   path: string;
+  /** When provided, a ✕ close control is shown in the header. */
+  onClose?: () => void;
 }
 
 /** Map our language ids to Code Hike / lighter language names. */
@@ -100,6 +103,7 @@ export function CodeViewer({
   language,
   highlight: range,
   path,
+  onClose,
 }: CodeViewerProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
   // Store the tokens together with the content they were computed from, so a
@@ -151,7 +155,14 @@ export function CodeViewer({
 
   return (
     <div className="cv-root">
-      <div className="cv-header">{path}</div>
+      <div className="cv-header">
+        <span className="cv-path">{path}</span>
+        {onClose && (
+          <button className="cv-close" onClick={onClose} title="Close file" aria-label="Close file">
+            <CloseIcon />
+          </button>
+        )}
+      </div>
       <div className="cv-scroll" ref={scrollRef}>
         {codeData ? (
           <Pre

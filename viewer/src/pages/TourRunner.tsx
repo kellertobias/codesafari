@@ -1,27 +1,22 @@
 /**
- * The running-tour layout: file tree (left), read-only code viewer (center),
- * and the tour panel (right). Supports "sneak around" — any file can be opened
- * from the tree and scrolled freely — while step selection drives the code
- * viewer to the referenced file and range.
+ * The running-tour panel — the right-hand side of the shell. It shows the
+ * current step's prose and navigation, and drives the shared file store so the
+ * left code surface follows the step. "Sneak around" browsing (opening other
+ * files from the tree or from Markdown references) happens in that shared
+ * surface without disturbing this panel.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { LineRange, Manifest, SourceFile } from '../../../src/model/types';
-import { CodeViewer } from '../code/CodeViewer';
-import { FileTree } from '../FileTree';
+import { useCallback, useEffect, useState } from 'react';
+import type { Manifest } from '../../../src/model/types';
 import { Markdown } from '../Markdown';
-import { href, navigate } from '../router';
+import { useFileStore } from '../fileStore';
+import { href } from '../router';
 
-interface OpenTarget {
-  path: string;
-  highlight: LineRange | null;
-}
-
-// @tour viewer:3 The three-pane runner
-// This is the screen you're reading in. Left: the file tree over every bundled
-// source file. Center: the read-only code pane. Right: this step panel. The
-// `open` state powers "sneak around" — opening a file from the tree detaches the
-// pane from the current step until you pick a step again.
+// @tour viewer:3 The tour runner panel
+// This is the panel you're reading in — the right side of the shell. Stepping
+// calls the shared file store's `openRange`, which drives the code surface on
+// the left to the step's file and highlight. Opening any other file (from the
+// tree or a Markdown reference) leaves this panel untouched.
 export function TourRunner({
   manifest,
   slug,
@@ -30,32 +25,23 @@ export function TourRunner({
   slug: string;
 }): JSX.Element {
   const tour = manifest.tours.find((t) => t.slug === slug);
-  const [stepIndex, setStepIndex] = useState(0);
-  const [open, setOpen] = useState<OpenTarget | null>(null);
-
-  const fileByPath = useMemo(() => {
-    const map = new Map<string, SourceFile>();
-    for (const file of manifest.files) map.set(file.path, file);
-    return map;
-  }, [manifest.files]);
+  const { openPath, openRange } = useFileStore();
 
   const steps = tour?.steps ?? [];
+  // The step index is derived from history via a piece of local state kept in
+  // sync below; using the store for the file keeps the code pane authoritative.
+  const [stepIndex, setStepIndex] = useStepIndex(slug);
   const currentStep = steps[stepIndex];
 
-  // Follow the current step unless the user has manually opened another file.
-  const activeTarget: OpenTarget | null =
-    open ??
-    (currentStep
-      ? { path: currentStep.file, highlight: currentStep.highlight }
-      : null);
-
   const goToStep = useCallback(
-    (index: number) => {
-      setStepIndex(index);
-      setOpen(null); // Re-attach the viewer to the step's file/range.
-    },
-    [],
+    (index: number) => setStepIndex(index),
+    [setStepIndex],
   );
+
+  // Drive the left code surface whenever the current step changes.
+  useEffect(() => {
+    if (currentStep) openRange(currentStep.file, currentStep.highlight);
+  }, [currentStep, openRange]);
 
   // Keyboard navigation: left/right arrows move between steps.
   useEffect(() => {
@@ -79,109 +65,99 @@ export function TourRunner({
     );
   }
 
-  const activeFile = activeTarget ? fileByPath.get(activeTarget.path) : undefined;
-
-  const calloutsForFile = activeTarget
-    ? manifest.callouts.filter((c) => c.file === activeTarget.path)
+  const browsingAway =
+    currentStep && openPath !== null && openPath !== currentStep.file;
+  const calloutsForFile = openPath
+    ? manifest.callouts.filter((c) => c.file === openPath)
     : [];
 
   return (
-    <div className="runner">
-      <div className="pane tree">
-        <FileTree
-          files={manifest.files}
-          activePath={activeTarget?.path ?? null}
-          onSelect={(path) => setOpen({ path, highlight: null })}
-        />
+    <div className="tour-panel standalone">
+      <div className="tour-panel-head">
+        <a href={href(`/tour/${tour.slug}`)}>← {tour.title}</a>
       </div>
 
-      <div className="pane code">
-        {activeFile ? (
-          <CodeViewer
-            content={activeFile.content}
-            language={activeFile.language}
-            highlight={activeTarget?.highlight ?? null}
-            path={activeFile.path}
-          />
+      <div className="tour-panel-body">
+        {currentStep ? (
+          <>
+            <h2 style={{ marginTop: 0 }}>{currentStep.title}</h2>
+            <Markdown source={currentStep.body} />
+          </>
         ) : (
-          <div className="empty" style={{ padding: 20 }}>
-            {activeTarget
-              ? `Source not bundled: ${activeTarget.path}`
-              : 'Select a step to begin.'}
-          </div>
+          <p className="empty">This tour has no steps.</p>
         )}
-      </div>
 
-      <div className="pane tour">
-        <div className="tour-panel-head">
-          <a href={href(`/tour/${tour.slug}`)}>← {tour.title}</a>
-        </div>
+        {browsingAway && currentStep && (
+          <p className="empty" style={{ marginTop: 16 }}>
+            Browsing <code>{openPath}</code> —{' '}
+            <button
+              className="link-button"
+              onClick={() => openRange(currentStep.file, currentStep.highlight)}
+            >
+              return to step
+            </button>
+          </p>
+        )}
 
-        <div className="tour-panel-body">
-          {currentStep ? (
-            <>
-              <h2 style={{ marginTop: 0 }}>{currentStep.title}</h2>
-              <Markdown source={currentStep.body} />
-            </>
-          ) : (
-            <p className="empty">This tour has no steps.</p>
-          )}
-
-          {open && currentStep && open.path !== currentStep.file && (
-            <p className="empty" style={{ marginTop: 16 }}>
-              Browsing <code>{open.path}</code> —{' '}
-              <button className="link-button" onClick={() => setOpen(null)}>
-                return to step
-              </button>
-            </p>
-          )}
-
-          {calloutsForFile.length > 0 && (
-            <div style={{ marginTop: 16 }}>
-              {calloutsForFile.map((callout, i) => (
-                <div className="callout" key={i}>
-                  <div className="callout-title">{callout.title}</div>
-                  <Markdown source={callout.body} />
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="step-overview">
-            {steps.map((step, i) => (
-              <button
-                key={`${step.file}:${step.order}`}
-                className={`step-overview-item${i === stepIndex && !open ? ' active' : ''}`}
-                onClick={() => goToStep(i)}
-              >
-                <span className="order">{step.order}</span>
-                {step.title}
-              </button>
+        {calloutsForFile.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            {calloutsForFile.map((callout, i) => (
+              <div className="callout" key={i}>
+                <div className="callout-title">{callout.title}</div>
+                <Markdown source={callout.body} />
+              </div>
             ))}
           </div>
-        </div>
+        )}
 
-        <div className="tour-panel-nav">
-          <button
-            className="btn secondary"
-            disabled={stepIndex === 0}
-            onClick={() => goToStep(stepIndex - 1)}
-          >
-            ← Prev
-          </button>
-          <button
-            className="btn"
-            disabled={stepIndex >= steps.length - 1}
-            onClick={() => goToStep(stepIndex + 1)}
-          >
-            Next →
-          </button>
-          <span className="spacer" style={{ flex: 1 }} />
-          <span className="step-counter">
-            {steps.length === 0 ? '0 / 0' : `${stepIndex + 1} / ${steps.length}`}
-          </span>
+        <div className="step-overview">
+          {steps.map((step, i) => (
+            <button
+              key={`${step.file}:${step.order}`}
+              className={`step-overview-item${i === stepIndex && !browsingAway ? ' active' : ''}`}
+              onClick={() => goToStep(i)}
+            >
+              <span className="order">{step.order}</span>
+              {step.title}
+            </button>
+          ))}
         </div>
+      </div>
+
+      <div className="tour-panel-nav">
+        <button
+          className="btn secondary"
+          disabled={stepIndex === 0}
+          onClick={() => goToStep(stepIndex - 1)}
+        >
+          ← Prev
+        </button>
+        <button
+          className="btn"
+          disabled={stepIndex >= steps.length - 1}
+          onClick={() => goToStep(stepIndex + 1)}
+        >
+          Next →
+        </button>
+        <span className="spacer" style={{ flex: 1 }} />
+        <span className="step-counter">
+          {steps.length === 0 ? '0 / 0' : `${stepIndex + 1} / ${steps.length}`}
+        </span>
       </div>
     </div>
   );
+}
+
+/** Step index reset to 0 whenever the tour slug changes. */
+function useStepIndex(slug: string): [number, (n: number) => void] {
+  const [state, setState] = useState<{ slug: string; index: number }>({
+    slug,
+    index: 0,
+  });
+  const index = state.slug === slug ? state.index : 0;
+  const set = useCallback(
+    (n: number) => setState({ slug, index: n }),
+    [slug],
+  );
+  return [index, set];
 }

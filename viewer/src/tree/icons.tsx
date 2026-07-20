@@ -74,6 +74,32 @@ export function FolderIcon({ open }: { open: boolean }): JSX.Element {
   );
 }
 
+/** The activity-bar folder button glyph (larger, monochrome). */
+export function ExplorerIcon(): JSX.Element {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4l2 2.2h7A1.5 1.5 0 0 1 19 8.7V17.5A1.5 1.5 0 0 1 17.5 19h-13A1.5 1.5 0 0 1 3 17.5z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+/** A small ✕ used to close the open file. */
+export function CloseIcon(): JSX.Element {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden>
+      <path
+        d="M3.5 3.5l7 7M10.5 3.5l-7 7"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 /** A disclosure chevron that points right (collapsed) or down (expanded). */
 export function ChevronIcon({ open }: { open: boolean }): JSX.Element {
   return (
