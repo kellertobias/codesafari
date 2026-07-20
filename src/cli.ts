@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Command-line entrypoint for @kobisk/codesafari. */
+/** Command-line entrypoint for @tobisk/codesafari. */
 
 import { readFile } from 'node:fs/promises';
 import { Command } from 'commander';

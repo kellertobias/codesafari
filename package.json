@@ -1,5 +1,5 @@
 {
-  "name": "@kobisk/codesafari",
+  "name": "@tobisk/codesafari",
   "version": "0.1.0",
   "description": "Turn a .tour/ folder plus inline @tour source comments into a local, offline code-tour website.",
   "keywords": [
@@ -36,6 +36,7 @@
     "build": "npm run build:core && npm run build:viewer",
     "build:core": "tsc -p tsconfig.build.json",
     "build:viewer": "vite build viewer",
+    "safari": "npm run build && node dist/cli.js dev .",
     "dev:core": "tsc -p tsconfig.build.json --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",

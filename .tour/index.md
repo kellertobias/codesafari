@@ -1,11 +1,11 @@
 ---
 title: CodeSafari, toured
-description: A guided tour of @kobisk/codesafari — the tool giving you this very tour.
+description: A guided tour of @tobisk/codesafari — the tool giving you this very tour.
 defaultSnippetLines: 18
-repositoryUrl: https://github.com/kobisk/codesafari
+repositoryUrl: https://github.com/tobisk/codesafari
 ---
 
-Welcome — you're looking at **`@kobisk/codesafari` explaining itself**. The pages,
+Welcome — you're looking at **`@tobisk/codesafari` explaining itself**. The pages,
 the file tree, the Monokai code pane on the left of every step: all of it was
 produced by this repository from the Markdown and the inline `@tour` comments it
 ships with.

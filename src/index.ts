@@ -1,4 +1,4 @@
-/** Public programmatic API for @kobisk/codesafari. */
+/** Public programmatic API for @tobisk/codesafari. */
 
 export * from './model/types.js';
 export { buildManifest } from './manifest/build.js';

@@ -1,8 +1,8 @@
-# @kobisk/codesafari
+# @tobisk/codesafari
 
 Turn a `.tour/` folder plus inline `@tour` source comments into a **local, offline code-tour website**.
 
-`@kobisk/codesafari` is a self-contained TypeScript/React tool you run with `npx`. It reads authored Markdown and inline code comments, builds a manifest of your project's guided tours, and serves them through a VS Code-like read-only viewer with a Monokai theme. It can run live with file watching (`dev`) or emit a fully static, backend-free site (`export`).
+`@tobisk/codesafari` is a self-contained TypeScript/React tool you run with `npx`. It reads authored Markdown and inline code comments, builds a manifest of your project's guided tours, and serves them through a VS Code-like read-only viewer with a Monokai theme. It can run live with file watching (`dev`) or emit a fully static, backend-free site (`export`).
 
 > Status: **early development.** The content model, parser, and CLI (`validate`) are the first pieces landing. See [Roadmap](#roadmap).
 
@@ -20,15 +20,15 @@ Onboarding docs rot because they live away from the code. CodeSafari keeps the *
 No install required:
 
 ```bash
-npx @kobisk/codesafari dev        # live server with file watching (default port 4317)
-npx @kobisk/codesafari export     # emit a static site to ./codesafari-site
-npx @kobisk/codesafari validate   # check content and report problems
+npx @tobisk/codesafari dev        # live server with file watching (default port 4317)
+npx @tobisk/codesafari export     # emit a static site to ./codesafari-site
+npx @tobisk/codesafari validate   # check content and report problems
 ```
 
 Or add it to a project:
 
 ```bash
-npm install --save-dev @kobisk/codesafari
+npm install --save-dev @tobisk/codesafari
 ```
 
 ### CLI
@@ -172,11 +172,10 @@ The center code viewer sits behind an internal `CodeViewer` abstraction. **v1 us
 This repository tours itself. From the repo root:
 
 ```bash
-npm run build          # build the core + viewer once
-node dist/cli.js dev . # open http://localhost:4317
+npm run safari   # build the core + viewer, then serve the tour at http://localhost:4317
 ```
 
-The `.tour/` folder and the `@tour` comments throughout `src/` and `viewer/src/` drive a two-tour walkthrough of the codebase.
+`npm run safari` runs CodeSafari on CodeSafari. The `.tour/` folder and the `@tour` comments throughout `src/` and `viewer/src/` drive a two-tour walkthrough of the codebase.
 
 ## License
 
