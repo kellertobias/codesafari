@@ -130,11 +130,7 @@ export function TourRunner({
           {open && currentStep && open.path !== currentStep.file && (
             <p className="empty" style={{ marginTop: 16 }}>
               Browsing <code>{open.path}</code> —{' '}
-              <button
-                className="tree-item"
-                style={{ display: 'inline', padding: 0, width: 'auto' }}
-                onClick={() => setOpen(null)}
-              >
+              <button className="link-button" onClick={() => setOpen(null)}>
                 return to step
               </button>
             </p>

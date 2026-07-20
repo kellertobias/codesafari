@@ -102,39 +102,45 @@ export function CodeViewer({
   path,
 }: CodeViewerProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [highlighted, setHighlighted] = useState<HighlightedCode | null>(null);
+  // Store the tokens together with the content they were computed from, so a
+  // pending re-tokenization never lets a new range annotate a stale file's
+  // tokens (Code Hike dereferences out-of-range tokens and throws).
+  const [tokenized, setTokenized] = useState<{
+    content: string;
+    result: HighlightedCode;
+  } | null>(null);
 
   // Tokenize the whole file whenever content/language changes.
   useEffect(() => {
     let alive = true;
     highlight({ value: content, lang: chLanguage(language), meta: '' }, THEME)
       .then((result) => {
-        if (alive) setHighlighted(result);
+        if (alive) setTokenized({ content, result });
       })
       .catch(() => {
-        if (alive) setHighlighted(null);
+        if (alive) setTokenized(null);
       });
     return () => {
       alive = false;
     };
   }, [content, language]);
 
+  // Only render once the tokens match the current file.
+  const ready = tokenized?.content === content ? tokenized.result : null;
+
   // Inject a block annotation for the requested range without re-tokenizing.
   const codeData = useMemo<HighlightedCode | null>(() => {
-    if (!highlighted) return null;
-    if (!range) return { ...highlighted, annotations: [] };
+    if (!ready) return null;
+    if (!range) return { ...ready, annotations: [] };
+    // Clamp to the file's line count as a defensive guard.
+    const totalLines = content.split('\n').length;
+    const start = Math.max(1, Math.min(range.start, totalLines));
+    const end = Math.max(start, Math.min(range.end, totalLines));
     return {
-      ...highlighted,
-      annotations: [
-        {
-          name: 'mark',
-          query: '',
-          fromLineNumber: range.start,
-          toLineNumber: range.end,
-        },
-      ],
+      ...ready,
+      annotations: [{ name: 'mark', query: '', fromLineNumber: start, toLineNumber: end }],
     };
-  }, [highlighted, range]);
+  }, [ready, range, content]);
 
   // Scroll the highlighted band into view whenever the range or file changes.
   useEffect(() => {
