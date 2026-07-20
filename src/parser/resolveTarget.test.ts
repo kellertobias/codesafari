@@ -24,6 +24,20 @@ describe('resolveTarget', () => {
     expect(result.highlight).toEqual({ start: 2, end: 4 });
   });
 
+  it('highlights a whole function with a destructured-props signature', () => {
+    const lines = [
+      '// @tour t:1 Local state',
+      'export function Counter({ start = 0 }: CounterProps) {',
+      '  const [count, setCount] = useState(start);',
+      '  return count;',
+      '}',
+      'const x = 1;',
+    ];
+    const result = resolveTarget(lines, 2, 1, 10, 'tsx');
+    expect(result.anchor).toBe('function');
+    expect(result.highlight).toEqual({ start: 2, end: 5 });
+  });
+
   it('highlights a Python function by indentation', () => {
     const lines = [
       '# comment',

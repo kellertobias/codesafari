@@ -6,6 +6,8 @@
  *
  *   - Line comments (`//`, `#`) on consecutive lines form one block.
  *   - A single block comment (`/* ... *\/`) forms one block.
+ *   - A single triple-quoted block (`""" ... """` or `''' ... '''`, i.e. a
+ *     Python docstring) forms one block.
  *
  * The first line of a block may declare a tour step or a callout:
  *
@@ -201,6 +203,33 @@ function collectBlocks(lines: string[]): CommentBlock[] {
           done = true;
         }
         content.push(stripBlockLine(text));
+        i++;
+      }
+      blocks.push({
+        lines: content,
+        startLine: start + 1,
+        endLine: i,
+        nextCodeLine: nextCode(lines, i),
+      });
+      continue;
+    }
+
+    // Triple-quoted block (Python docstring): `"""..."""` or `'''...'''`.
+    const tripleMatch = /^("""|''')/.exec(trimmed);
+    if (tripleMatch) {
+      const delim = tripleMatch[1];
+      const start = i;
+      const content: string[] = [];
+      let done = false;
+      while (i < lines.length && !done) {
+        let text = lines[i];
+        if (i === start) text = text.slice(text.indexOf(delim) + delim.length);
+        const closeIdx = text.indexOf(delim);
+        if (closeIdx !== -1) {
+          text = text.slice(0, closeIdx);
+          done = true;
+        }
+        content.push(text.trimEnd());
         i++;
       }
       blocks.push({

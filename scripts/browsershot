@@ -1,0 +1,1112 @@
+#!/opt/homebrew/bin/python3
+"""
+browsershot: wrap one or more images in Safari/macOS or iPhone screenshot frames.
+
+Usage:
+  browsershot <sourcefile> [sourcefile ...] --address my.addressbar-value.com --iphone --light --stylized
+"""
+
+from __future__ import annotations
+
+import argparse
+import math
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
+
+DEFAULT_ADDRESS = "example.com"
+SF_SYMBOLS = {
+    "sidebar": "sidebar.left",
+    "down": "chevron.down",
+    "back": "chevron.left",
+    "forward": "chevron.right",
+    "download": "arrow.down.circle",
+    "share": "square.and.arrow.up",
+    "plus": "plus",
+    "tabs": "square.on.square",
+    "reload": "arrow.clockwise",
+    "lock": "lock",
+    "lock_bold": "lock",
+}
+SF_SYMBOL_CACHE: dict[tuple[int, str], dict[str, Image.Image]] = {}
+MASK_KEYS = {"top", "right", "bottom", "left", "x", "y"}
+MASK_OPTIONS = {"--mask": "mask", "--imask": "imask"}
+VALUE_OPTIONS = {"--address", "--left", "--right", "--top", "--bottom", "--scale", "--cursor", "--overlay", "--output", "-o"}
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="browsershot",
+        description="Wrap one or more images in Safari browser or iPhone screenshot frames.",
+    )
+    parser.add_argument("sourcefile", nargs="+", help="Image or images to frame")
+    parser.add_argument(
+        "--address",
+        default=DEFAULT_ADDRESS,
+        help=f"Address bar text. Defaults to {DEFAULT_ADDRESS!r}.",
+    )
+    parser.add_argument("--iphone", action="store_true", help="Render inside an iPhone frame")
+    parser.add_argument("--light", action="store_true", help="Use light mode. Default is dark mode")
+    parser.add_argument(
+        "--stylized",
+        action="store_true",
+        help="Use a simple line-drawing browser/device style",
+    )
+    parser.add_argument(
+        "--mask",
+        metavar="SPEC",
+        nargs="+",
+        help="Crop source images before framing, e.g. --mask bottom:100px left:50%%",
+    )
+    parser.add_argument(
+        "--imask",
+        metavar="SPEC",
+        nargs="+",
+        help="Keep source image regions before framing, e.g. --imask top:720px left:1280px",
+    )
+    parser.add_argument(
+        "--overlay",
+        action="append",
+        default=[],
+        metavar="IMAGE,X,Y[,SCALE]",
+        help="Place an overlay image above browsers, e.g. --overlay dragoverlay.png,400,250,50%%",
+    )
+    parser.add_argument(
+        "--cursor",
+        action="append",
+        default=[],
+        metavar="X,Y",
+        help="Draw a macOS-style cursor above overlays, e.g. --cursor 500,300",
+    )
+    horizontal = parser.add_mutually_exclusive_group()
+    horizontal.add_argument(
+        "--left",
+        type=non_negative_int,
+        metavar="PX",
+        help="Place the top browser this many pixels left of the browser behind it",
+    )
+    horizontal.add_argument(
+        "--right",
+        type=non_negative_int,
+        metavar="PX",
+        help="Place the top browser this many pixels right of the browser behind it",
+    )
+    vertical = parser.add_mutually_exclusive_group()
+    vertical.add_argument(
+        "--top",
+        type=non_negative_int,
+        metavar="PX",
+        help="Place the top browser this many pixels above the browser behind it",
+    )
+    vertical.add_argument(
+        "--bottom",
+        type=non_negative_int,
+        metavar="PX",
+        help="Place the top browser this many pixels below the browser behind it",
+    )
+    parser.add_argument(
+        "--scale",
+        type=scale_down_fraction,
+        default=0.0,
+        metavar="PERCENT",
+        help="Scale each background browser down by this percentage per stack level, e.g. --scale 5%%",
+    )
+    parser.add_argument("--no-shadow", action="store_true", help="Disable the outer browser/device shadow")
+    parser.add_argument(
+        "-o",
+        "--output",
+        help="Optional output path. Defaults to <sourcefile>.safari[-stack][-iphone]-<style>-<mode>.png",
+    )
+    argv = sys.argv[1:] if argv is None else argv
+    cleaned_argv, source_mask_ops, mask_error = extract_mask_args(argv)
+    if mask_error:
+        parser.error(mask_error)
+
+    args = parser.parse_args(cleaned_argv)
+    if len(source_mask_ops) != len(args.sourcefile):
+        parser.error("--mask placement could not be matched to source files")
+    args.source_mask_ops = source_mask_ops
+    return args
+
+
+def extract_mask_args(argv: list[str]) -> tuple[list[str], list[list[tuple[str, list[str]]]], str | None]:
+    cleaned: list[str] = []
+    global_ops: list[tuple[str, list[str]]] = []
+    source_ops: list[list[tuple[str, list[str]]]] = []
+    last_source_index: int | None = None
+    i = 0
+
+    while i < len(argv):
+        token = argv[i]
+        option = None
+        option_value = None
+        for candidate, kind in MASK_OPTIONS.items():
+            if token == candidate:
+                option = kind
+                break
+            if token.startswith(candidate + "="):
+                option = kind
+                option_value = token.split("=", 1)[1]
+                break
+        if option is not None:
+            specs: list[str] = []
+            if option_value is not None:
+                if option_value:
+                    specs.append(option_value)
+                i += 1
+            else:
+                i += 1
+            while i < len(argv) and not argv[i].startswith("-") and ":" in argv[i]:
+                specs.append(argv[i])
+                i += 1
+            if not specs:
+                return cleaned, source_ops, f"--{option} requires at least one mask spec, such as bottom:100px"
+            if last_source_index is None:
+                global_ops.append((option, specs))
+            else:
+                source_ops[last_source_index].append((option, specs))
+            continue
+
+        cleaned.append(token)
+        if token in VALUE_OPTIONS:
+            if i + 1 < len(argv):
+                i += 1
+                cleaned.append(argv[i])
+        elif token.startswith("--") and "=" in token:
+            pass
+        elif not token.startswith("-"):
+            source_ops.append([(kind, list(specs)) for kind, specs in global_ops])
+            last_source_index = len(source_ops) - 1
+        i += 1
+
+    return cleaned, source_ops, None
+
+
+def non_negative_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"invalid pixel value: {value!r}") from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("pixel value must be 0 or greater")
+    return parsed
+
+
+def scale_down_fraction(value: str) -> float:
+    raw_value = value
+    if value.endswith("%"):
+        value = value[:-1]
+        try:
+            fraction = float(value) / 100
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(f"invalid scale percentage: {raw_value!r}") from exc
+    else:
+        try:
+            parsed = float(value)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(f"invalid scale percentage: {raw_value!r}") from exc
+        fraction = parsed / 100 if parsed > 1 else parsed
+
+    if fraction < 0 or fraction >= 1:
+        raise argparse.ArgumentTypeError("scale must be at least 0% and less than 100%")
+    return fraction
+
+
+def parse_point(value: str, label: str) -> tuple[int, int]:
+    parts = value.split(",")
+    if len(parts) != 2:
+        raise ValueError(f"{label} must be formatted as x,y")
+    try:
+        x = int(parts[0])
+        y = int(parts[1])
+    except ValueError as exc:
+        raise ValueError(f"{label} coordinates must be integers") from exc
+    return x, y
+
+
+def parse_overlay_spec(value: str) -> tuple[Path, int, int, float]:
+    parts = value.split(",")
+    if len(parts) not in {3, 4}:
+        raise ValueError("overlay must be formatted as image,x,y[,scale]")
+    path = Path(parts[0])
+    try:
+        x = int(parts[1])
+        y = int(parts[2])
+    except ValueError as exc:
+        raise ValueError("overlay coordinates must be integers") from exc
+
+    scale = 1.0
+    if len(parts) == 4:
+        raw_scale = parts[3]
+        if raw_scale.endswith("%"):
+            raw_scale = raw_scale[:-1]
+            try:
+                scale = float(raw_scale) / 100
+            except ValueError as exc:
+                raise ValueError(f"invalid overlay scale: {parts[3]!r}") from exc
+        else:
+            try:
+                scale = float(raw_scale)
+            except ValueError as exc:
+                raise ValueError(f"invalid overlay scale: {parts[3]!r}") from exc
+    if scale <= 0:
+        raise ValueError("overlay scale must be greater than 0")
+    return path, x, y, scale
+
+
+def expand_canvas(base: Image.Image, min_width: int, min_height: int) -> Image.Image:
+    if min_width <= base.width and min_height <= base.height:
+        return base
+    expanded = Image.new("RGBA", (max(base.width, min_width), max(base.height, min_height)), (0, 0, 0, 0))
+    expanded.alpha_composite(base)
+    return expanded
+
+
+def paste_layer(base: Image.Image, layer: Image.Image, position: tuple[int, int]) -> tuple[Image.Image, tuple[int, int]]:
+    x, y = position
+    shift_x = max(0, -x)
+    shift_y = max(0, -y)
+    width = max(base.width + shift_x, x + shift_x + layer.width)
+    height = max(base.height + shift_y, y + shift_y + layer.height)
+    if shift_x or shift_y or width > base.width or height > base.height:
+        expanded = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        expanded.alpha_composite(base, (shift_x, shift_y))
+        base = expanded
+    base.alpha_composite(layer, (x + shift_x, y + shift_y))
+    return base, (shift_x, shift_y)
+
+
+def source_position(origin: tuple[int, int], scale: float, x: int, y: int) -> tuple[int, int]:
+    return (round(origin[0] + x * scale), round(origin[1] + y * scale))
+
+
+def apply_overlays(base: Image.Image, specs: list[str], source_origin: tuple[int, int], source_scale: float) -> tuple[Image.Image, tuple[int, int]]:
+    total_shift = (0, 0)
+    for spec in specs:
+        path, x, y, scale = parse_overlay_spec(spec)
+        if not path.exists():
+            raise ValueError(f"overlay image not found: {path}")
+        try:
+            overlay = Image.open(path).convert("RGBA")
+        except Exception as exc:
+            raise ValueError(f"could not open overlay image {path}: {exc}") from exc
+        if scale != 1.0:
+            size = (max(1, round(overlay.width * scale)), max(1, round(overlay.height * scale)))
+            overlay = overlay.resize(size, Image.Resampling.LANCZOS)
+        base, shift = paste_layer(base, overlay, source_position(source_origin, source_scale, x, y))
+        total_shift = (total_shift[0] + shift[0], total_shift[1] + shift[1])
+        source_origin = (source_origin[0] + shift[0], source_origin[1] + shift[1])
+    return base, total_shift
+
+
+def cursor_image() -> Image.Image:
+    scale = 8
+    outer_points = [(0.7, 0.6), (0.7, 17.8), (5.4, 13.3), (8.4, 20.0), (11.5, 18.8), (8.5, 12.2), (14.3, 12.2)]
+    inner_points = [(2.1, 3.9), (2.1, 15.4), (5.5, 11.6), (8.3, 17.6), (9.7, 17.0), (6.7, 10.5), (11.2, 10.5)]
+    high = Image.new("RGBA", (16 * scale, 22 * scale), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(high)
+    scaled_outer = [(x * scale, y * scale) for x, y in outer_points]
+    scaled_inner = [(x * scale, y * scale) for x, y in inner_points]
+    draw.polygon(scaled_outer, fill=color("ffffff"))
+    draw.polygon(scaled_inner, fill=color("050505"))
+    return high.resize((16, 22), Image.Resampling.LANCZOS)
+
+
+def apply_cursors(base: Image.Image, specs: list[str], source_origin: tuple[int, int], source_scale: float) -> Image.Image:
+    if not specs:
+        return base
+    cursor = cursor_image()
+    for spec in specs:
+        x, y = parse_point(spec, "cursor")
+        base, shift = paste_layer(base, cursor, source_position(source_origin, source_scale, x, y))
+        source_origin = (source_origin[0] + shift[0], source_origin[1] + shift[1])
+    return base
+
+
+def mask_amount(value: str, dimension: int) -> int:
+    if value.endswith("%"):
+        number = value[:-1]
+        try:
+            percent = float(number)
+        except ValueError as exc:
+            raise ValueError(f"invalid percentage mask value: {value!r}") from exc
+        if percent < 0:
+            raise ValueError("mask value must be 0 or greater")
+        return round(dimension * percent / 100)
+
+    if value.endswith("px"):
+        value = value[:-2]
+    try:
+        pixels = int(value)
+    except ValueError as exc:
+        raise ValueError(f"invalid pixel mask value: {value!r}") from exc
+    if pixels < 0:
+        raise ValueError("mask value must be 0 or greater")
+    return pixels
+
+
+def parse_mask_spec(spec: str, image: Image.Image) -> tuple[int, int, int, int]:
+    key, separator, value = spec.partition(":")
+    if not separator or not key or not value:
+        raise ValueError(f"invalid mask spec: {spec!r}")
+    if key not in MASK_KEYS:
+        raise ValueError(f"invalid mask edge {key!r}; expected one of {', '.join(sorted(MASK_KEYS))}")
+
+    if key in {"left", "right", "x"}:
+        amount = mask_amount(value, image.width)
+    else:
+        amount = mask_amount(value, image.height)
+
+    if key == "top":
+        return (0, amount, 0, 0)
+    if key == "right":
+        return (0, 0, amount, 0)
+    if key == "bottom":
+        return (0, 0, 0, amount)
+    if key == "left":
+        return (amount, 0, 0, 0)
+    if key == "x":
+        return (amount, 0, amount, 0)
+    return (0, amount, 0, amount)
+
+
+def crop_keep_non_empty(image: Image.Image, left: int, top: int, right: int, bottom: int) -> Image.Image:
+    left = max(0, min(image.width - 1, left))
+    top = max(0, min(image.height - 1, top))
+    right = max(left + 1, min(image.width, right))
+    bottom = max(top + 1, min(image.height, bottom))
+    return image.crop((left, top, right, bottom))
+
+
+def apply_masks(image: Image.Image, specs: list[str]) -> Image.Image:
+    if not specs:
+        return image
+
+    left = top = right = bottom = 0
+    for spec in specs:
+        add_left, add_top, add_right, add_bottom = parse_mask_spec(spec, image)
+        left += add_left
+        top += add_top
+        right += add_right
+        bottom += add_bottom
+
+    if left + right >= image.width:
+        overflow = left + right - image.width + 1
+        if right >= overflow:
+            right -= overflow
+        else:
+            left = max(0, left - (overflow - right))
+            right = 0
+    if top + bottom >= image.height:
+        overflow = top + bottom - image.height + 1
+        if bottom >= overflow:
+            bottom -= overflow
+        else:
+            top = max(0, top - (overflow - bottom))
+            bottom = 0
+
+    return crop_keep_non_empty(image, left, top, image.width - right, image.height - bottom)
+
+
+def parse_inverse_mask_spec(spec: str, image: Image.Image) -> tuple[int | None, int | None, int | None, int | None]:
+    key, separator, value = spec.partition(":")
+    if not separator or not key or not value:
+        raise ValueError(f"invalid inverse mask spec: {spec!r}")
+    if key not in MASK_KEYS:
+        raise ValueError(f"invalid inverse mask edge {key!r}; expected one of {', '.join(sorted(MASK_KEYS))}")
+
+    if key in {"left", "right", "x"}:
+        amount = mask_amount(value, image.width)
+    else:
+        amount = mask_amount(value, image.height)
+
+    if key == "top":
+        return (None, 0, None, amount)
+    if key == "right":
+        return (image.width - amount, None, image.width, None)
+    if key == "bottom":
+        return (None, image.height - amount, None, image.height)
+    if key == "left":
+        return (0, None, amount, None)
+    if key == "x":
+        inset = max(0, round((image.width - amount) / 2))
+        return (inset, None, inset + amount, None)
+    inset = max(0, round((image.height - amount) / 2))
+    return (None, inset, None, inset + amount)
+
+
+def apply_inverse_masks(image: Image.Image, specs: list[str]) -> Image.Image:
+    if not specs:
+        return image
+
+    left = 0
+    top = 0
+    right = image.width
+    bottom = image.height
+    for spec in specs:
+        keep_left, keep_top, keep_right, keep_bottom = parse_inverse_mask_spec(spec, image)
+        if keep_left is not None:
+            left = max(left, keep_left)
+        if keep_top is not None:
+            top = max(top, keep_top)
+        if keep_right is not None:
+            right = min(right, keep_right)
+        if keep_bottom is not None:
+            bottom = min(bottom, keep_bottom)
+
+    return crop_keep_non_empty(image, left, top, right, bottom)
+
+
+def apply_mask_ops(image: Image.Image, ops: list[tuple[str, list[str]]]) -> Image.Image:
+    for kind, specs in ops:
+        if kind == "mask":
+            image = apply_masks(image, specs)
+        elif kind == "imask":
+            image = apply_inverse_masks(image, specs)
+        else:
+            raise ValueError(f"unknown mask operation: {kind}")
+    return image
+
+
+def color(hex_value: str) -> tuple[int, int, int, int]:
+    hex_value = hex_value.strip("#")
+    if len(hex_value) == 6:
+        return tuple(int(hex_value[i : i + 2], 16) for i in (0, 2, 4)) + (255,)
+    if len(hex_value) == 8:
+        return tuple(int(hex_value[i : i + 2], 16) for i in (0, 2, 4, 6))
+    raise ValueError(f"Invalid color: {hex_value}")
+
+
+def with_alpha(rgba: tuple[int, int, int, int], alpha_factor: float) -> tuple[int, int, int, int]:
+    return (rgba[0], rgba[1], rgba[2], max(0, min(255, round(rgba[3] * alpha_factor))))
+
+
+def font(size: int, bold: bool = False, variation: str | None = None) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    candidates = [
+        "/System/Library/Fonts/SFNS.ttf",
+        "/System/Library/Fonts/HelveticaNeue.ttc",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf" if bold or variation else "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/Library/Fonts/Arial Bold.ttf" if bold or variation else "/Library/Fonts/Arial.ttf",
+    ]
+    for candidate in candidates:
+        try:
+            loaded = ImageFont.truetype(candidate, size=size)
+            if variation and hasattr(loaded, "set_variation_by_name"):
+                try:
+                    loaded.set_variation_by_name(variation)
+                except OSError:
+                    pass
+            return loaded
+        except OSError:
+            pass
+    return ImageFont.load_default()
+
+
+def rounded_mask(size: tuple[int, int], radius: int) -> Image.Image:
+    mask = Image.new("L", size, 0)
+    draw = ImageDraw.Draw(mask)
+    draw.rounded_rectangle((0, 0, size[0] - 1, size[1] - 1), radius=radius, fill=255)
+    return mask
+
+
+def cover_resize(image: Image.Image, size: tuple[int, int]) -> Image.Image:
+    target_w, target_h = size
+    scale = max(target_w / image.width, target_h / image.height)
+    new_size = (max(1, math.ceil(image.width * scale)), max(1, math.ceil(image.height * scale)))
+    resized = image.resize(new_size, Image.Resampling.LANCZOS)
+    left = (resized.width - target_w) // 2
+    top = (resized.height - target_h) // 2
+    return resized.crop((left, top, left + target_w, top + target_h))
+
+
+def contain_resize(image: Image.Image, max_size: tuple[int, int], background: tuple[int, int, int, int]) -> Image.Image:
+    scale = min(max_size[0] / image.width, max_size[1] / image.height)
+    new_size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
+    resized = image.resize(new_size, Image.Resampling.LANCZOS)
+    canvas = Image.new("RGBA", max_size, background)
+    canvas.alpha_composite(resized, ((max_size[0] - resized.width) // 2, (max_size[1] - resized.height) // 2))
+    return canvas
+
+
+def render_sf_symbol_masks(point_size: int) -> dict[str, Image.Image]:
+    cache_key = (point_size, sys.platform)
+    if cache_key in SF_SYMBOL_CACHE:
+        return SF_SYMBOL_CACHE[cache_key]
+    if sys.platform != "darwin":
+        SF_SYMBOL_CACHE[cache_key] = {}
+        return {}
+
+    cache_dir = Path(tempfile.gettempdir()) / "browsershot-sf-symbols" / f"pt-{point_size}"
+    def load_mask(path: Path) -> Image.Image:
+        image = Image.open(path).convert("RGBA")
+        bounds = image.getchannel("A").getbbox()
+        if bounds is None:
+            return image
+        pad = max(2, point_size // 18)
+        x0 = max(0, bounds[0] - pad)
+        y0 = max(0, bounds[1] - pad)
+        x1 = min(image.width, bounds[2] + pad)
+        y1 = min(image.height, bounds[3] + pad)
+        return image.crop((x0, y0, x1, y1))
+
+    if all((cache_dir / f"{key}.png").exists() for key in SF_SYMBOLS):
+        masks = {key: load_mask(cache_dir / f"{key}.png") for key in SF_SYMBOLS}
+        SF_SYMBOL_CACHE[cache_key] = masks
+        return masks
+
+    swift_source = """
+import AppKit
+import Foundation
+
+let args = CommandLine.arguments
+let outDir = URL(fileURLWithPath: args[1], isDirectory: true)
+let pointSize = Double(args[2])!
+let defaultConfig = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .medium, scale: .medium)
+let boldConfig = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .bold, scale: .medium)
+let canvas = Int(ceil(pointSize * 1.8))
+
+for i in stride(from: 3, to: args.count, by: 2) {
+    let key = args[i]
+    let name = args[i + 1]
+    let config = key == "lock_bold" ? boldConfig : defaultConfig
+    guard let base = NSImage(systemSymbolName: name, accessibilityDescription: nil),
+          let image = base.withSymbolConfiguration(config) else { continue }
+
+    let output = NSImage(size: NSSize(width: canvas, height: canvas))
+    output.lockFocus()
+    NSColor.clear.setFill()
+    NSRect(x: 0, y: 0, width: canvas, height: canvas).fill()
+    NSColor.black.set()
+    let rect = NSRect(
+        x: (Double(canvas) - pointSize) / 2.0,
+        y: (Double(canvas) - pointSize) / 2.0,
+        width: pointSize,
+        height: pointSize
+    )
+    image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1.0)
+    output.unlockFocus()
+
+    guard let tiff = output.tiffRepresentation,
+          let bitmap = NSBitmapImageRep(data: tiff),
+          let png = bitmap.representation(using: .png, properties: [:]) else { continue }
+    try? png.write(to: outDir.appendingPathComponent("\\(key).png"))
+}
+"""
+
+    masks: dict[str, Image.Image] = {}
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="browsershot-symbols-build-") as tmp:
+        tmp_path = Path(tmp)
+        script_path = tmp_path / "render_symbols.swift"
+        script_path.write_text(swift_source)
+        cmd = ["swift", str(script_path), str(cache_dir), str(point_size)]
+        for key, symbol_name in SF_SYMBOLS.items():
+            cmd.extend([key, symbol_name])
+        env = os.environ.copy()
+        env["CLANG_MODULE_CACHE_PATH"] = str(Path(tempfile.gettempdir()) / "browsershot-swift-module-cache")
+        try:
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, timeout=60)
+            for key in SF_SYMBOLS:
+                icon_path = cache_dir / f"{key}.png"
+                if icon_path.exists():
+                    masks[key] = load_mask(icon_path)
+        except (OSError, subprocess.SubprocessError):
+            masks = {}
+
+    SF_SYMBOL_CACHE[cache_key] = masks
+    return masks
+
+
+def paste_masked_icon(
+    base: Image.Image,
+    masks: dict[str, Image.Image],
+    key: str,
+    center: tuple[float, float],
+    size: float | tuple[float, float],
+    fill,
+    scale: int,
+) -> bool:
+    mask = masks.get(key)
+    if mask is None:
+        return False
+    if isinstance(size, tuple):
+        target_size = (max(1, round(size[0] * scale)), max(1, round(size[1] * scale)))
+    else:
+        target = max(1, round(size * scale))
+        target_size = (target, target)
+    icon = mask.resize(target_size, Image.Resampling.LANCZOS)
+    alpha = icon.getchannel("A")
+    fill_layer = Image.new("RGBA", icon.size, fill)
+    pos = (round(center[0] * scale - target_size[0] / 2), round(center[1] * scale - target_size[1] / 2))
+    base.paste(fill_layer, pos, alpha)
+    return True
+
+
+def add_shadow(
+    base: Image.Image,
+    frame_rect: tuple[int, int, int, int],
+    radius: int,
+    opacity: int,
+    blur: int,
+    y_offset: int,
+) -> None:
+    x0, y0, x1, y1 = frame_rect
+    shadow = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    shape = Image.new("L", (x1 - x0, y1 - y0), 0)
+    ImageDraw.Draw(shape).rounded_rectangle((0, 0, x1 - x0 - 1, y1 - y0 - 1), radius=radius, fill=opacity)
+    shadow.paste(Image.new("RGBA", shape.size, (0, 0, 0, 255)), (x0, y0 + y_offset), shape)
+    base.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(blur)))
+
+
+def text_fit(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    max_width: int,
+    size: int,
+    fill,
+    anchor_xy,
+    anchor="mm",
+    variation: str | None = None,
+) -> None:
+    current = text
+    text_font = font(size, variation=variation)
+    if draw.textlength(current, font=text_font) <= max_width:
+        draw.text(anchor_xy, current, font=text_font, fill=fill, anchor=anchor)
+        return
+    ellipsis = "..."
+    while current and draw.textlength(current + ellipsis, font=text_font) > max_width:
+        current = current[:-1]
+    draw.text(anchor_xy, current + ellipsis, font=text_font, fill=fill, anchor=anchor)
+
+
+def draw_icon(draw: ImageDraw.ImageDraw, kind: str, box: tuple[int, int, int, int], fill, width: int = 2) -> None:
+    x0, y0, x1, y1 = box
+    w = x1 - x0
+    h = y1 - y0
+    cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
+    if kind == "back":
+        draw.line((x0 + w * 0.68, y0 + h * 0.18, x0 + w * 0.28, cy, x0 + w * 0.68, y0 + h * 0.82), fill=fill, width=width, joint="curve")
+    elif kind == "forward":
+        draw.line((x0 + w * 0.32, y0 + h * 0.18, x0 + w * 0.72, cy, x0 + w * 0.32, y0 + h * 0.82), fill=fill, width=width, joint="curve")
+    elif kind == "share":
+        draw.rounded_rectangle((x0 + w * 0.24, y0 + h * 0.42, x1 - w * 0.24, y1 - h * 0.12), radius=max(2, width * 1.4), outline=fill, width=width)
+        draw.line((cx, y0 + h * 0.16, cx, y0 + h * 0.64), fill=fill, width=width)
+        draw.line((cx, y0 + h * 0.16, cx - w * 0.18, y0 + h * 0.34), fill=fill, width=width)
+        draw.line((cx, y0 + h * 0.16, cx + w * 0.18, y0 + h * 0.34), fill=fill, width=width)
+    elif kind == "tabs":
+        draw.rounded_rectangle((x0 + w * 0.34, y0 + h * 0.18, x1 - w * 0.08, y1 - h * 0.34), radius=max(2, width * 1.2), outline=fill, width=width)
+        draw.rounded_rectangle((x0 + w * 0.08, y0 + h * 0.34, x1 - w * 0.34, y1 - h * 0.08), radius=max(2, width * 1.2), outline=fill, width=width)
+    elif kind == "plus":
+        draw.line((cx, y0 + h * 0.22, cx, y1 - h * 0.22), fill=fill, width=width)
+        draw.line((x0 + w * 0.22, cy, x1 - w * 0.22, cy), fill=fill, width=width)
+    elif kind == "down":
+        draw.line((x0 + w * 0.28, y0 + h * 0.36, cx, y0 + h * 0.66, x0 + w * 0.72, y0 + h * 0.36), fill=fill, width=width, joint="curve")
+
+
+def draw_icon_scaled(
+    draw: ImageDraw.ImageDraw,
+    kind: str,
+    box: tuple[float, float, float, float],
+    fill,
+    scale: int,
+    width: float = 1.6,
+) -> None:
+    scaled = tuple(round(value * scale) for value in box)
+    draw_icon(draw, kind, scaled, fill, max(1, round(width * scale)))
+
+
+def draw_safari_sidebar_icon(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], fill, width: int) -> None:
+    x0, y0, x1, y1 = box
+    draw.rounded_rectangle((x0, y0, x1, y1), radius=max(2, width), outline=fill, width=width)
+    split = x0 + round((x1 - x0) * 0.36)
+    draw.line((split, y0 + width, split, y1 - width), fill=fill, width=width)
+    draw.line((x0 + width, y0 + round((y1 - y0) * 0.32), split, y0 + round((y1 - y0) * 0.32)), fill=fill, width=width)
+    draw.line((x0 + width, y0 + round((y1 - y0) * 0.62), split, y0 + round((y1 - y0) * 0.62)), fill=fill, width=width)
+
+
+def draw_reload_icon(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], fill, width: int) -> None:
+    x0, y0, x1, y1 = box
+    draw.arc((x0 + width, y0 + width, x1 - width, y1 - width), 40, 330, fill=fill, width=width)
+    draw.line((x1 - 5 * width, y0 + 3 * width, x1 - width, y0 + 4 * width), fill=fill, width=width)
+    draw.line((x1 - 5 * width, y0 + 3 * width, x1 - 4 * width, y0 + 7 * width), fill=fill, width=width)
+
+
+def draw_download_icon(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], fill, width: int) -> None:
+    x0, y0, x1, y1 = box
+    cx = (x0 + x1) // 2
+    draw.ellipse((x0, y0, x1, y1), outline=fill, width=width)
+    draw.line((cx, y0 + 5 * width, cx, y1 - 6 * width), fill=fill, width=width)
+    draw.line((cx, y1 - 6 * width, cx - 3 * width, y1 - 9 * width), fill=fill, width=width)
+    draw.line((cx, y1 - 6 * width, cx + 3 * width, y1 - 9 * width), fill=fill, width=width)
+
+
+def draw_safari_icon_scaled(
+    draw: ImageDraw.ImageDraw,
+    kind: str,
+    box: tuple[float, float, float, float],
+    fill,
+    scale: int,
+    width: float = 1.15,
+) -> None:
+    scaled = tuple(round(value * scale) for value in box)
+    line_width = max(1, round(width * scale))
+    if kind == "sidebar":
+        draw_safari_sidebar_icon(draw, scaled, fill, line_width)
+    elif kind == "reload":
+        draw_reload_icon(draw, scaled, fill, line_width)
+    elif kind == "download":
+        draw_download_icon(draw, scaled, fill, line_width)
+    else:
+        draw_icon(draw, kind, scaled, fill, line_width)
+
+
+def scaled_rounded_mask(size: tuple[int, int], radius: int, scale: int) -> Image.Image:
+    high = Image.new("L", (size[0] * scale, size[1] * scale), 0)
+    draw = ImageDraw.Draw(high)
+    draw.rounded_rectangle((0, 0, high.width - 1, high.height - 1), radius=radius * scale, fill=255)
+    return high
+
+
+def safari_content_mask(frame_w: int, frame_h: int, toolbar_h: int, radius: int, scale: int) -> Image.Image:
+    frame_mask = scaled_rounded_mask((frame_w, frame_h), radius, scale)
+    return frame_mask.crop((0, toolbar_h * scale, frame_w * scale, frame_h * scale))
+
+
+def safari_source_transform(source: Image.Image, stylized: bool, shadow: bool) -> tuple[tuple[int, int], float]:
+    viewport_w = max(900, min(1800, source.width))
+    viewport_h = round(viewport_w * source.height / source.width)
+    viewport_h = max(520, min(1200, viewport_h))
+    toolbar_h = 64 if stylized else 54
+    margin = 84 if shadow else 28
+    fit_scale = min(viewport_w / source.width, viewport_h / source.height)
+    rendered_w = round(source.width * fit_scale)
+    rendered_h = round(source.height * fit_scale)
+    origin = (
+        margin + (viewport_w - rendered_w) // 2,
+        margin + toolbar_h + (viewport_h - rendered_h) // 2,
+    )
+    return origin, fit_scale
+
+
+def iphone_source_transform(source: Image.Image, stylized: bool, shadow: bool) -> tuple[tuple[int, int], float]:
+    screen_w, screen_h = 390, 844
+    bezel = 20 if not stylized else 14
+    margin = 76 if shadow else 24
+    fit_scale = max(screen_w / source.width, screen_h / source.height)
+    rendered_w = math.ceil(source.width * fit_scale)
+    rendered_h = math.ceil(source.height * fit_scale)
+    crop_left = (rendered_w - screen_w) // 2
+    crop_top = (rendered_h - screen_h) // 2
+    origin = (margin + bezel - crop_left, margin + bezel - crop_top)
+    return origin, fit_scale
+
+
+def draw_safari(source: Image.Image, address: str, light: bool, stylized: bool, shadow: bool) -> Image.Image:
+    scale = 4
+    sf_masks = {} if stylized else render_sf_symbol_masks(18 * scale)
+    viewport_w = max(900, min(1800, source.width))
+    viewport_h = round(viewport_w * source.height / source.width)
+    viewport_h = max(520, min(1200, viewport_h))
+    toolbar_h = 64 if stylized else 54
+    frame_w = viewport_w
+    frame_h = viewport_h + toolbar_h
+    radius = 24 if stylized else 24
+    margin = 84 if shadow else 28
+    out = Image.new("RGBA", ((frame_w + margin * 2) * scale, (frame_h + margin * 2) * scale), (0, 0, 0, 0))
+
+    def p(value: float) -> int:
+        return round(value * scale)
+
+    def r(rectangle: tuple[float, float, float, float]) -> tuple[int, int, int, int]:
+        return tuple(p(value) for value in rectangle)
+
+    rect = r((margin, margin, margin + frame_w, margin + frame_h))
+
+    if shadow:
+        add_shadow(out, rect, radius * scale, 76 if light else 130, 28 * scale, 16 * scale)
+
+    draw = ImageDraw.Draw(out)
+    if stylized:
+        paper = color("fbfbf8") if light else color("121417")
+        ink = color("20242a") if light else color("e9eef4")
+        muted = color("737780") if light else color("a4abb4")
+        toolbar = paper
+        page_bg = color("ffffff") if light else color("0d0f12")
+        draw.rounded_rectangle(rect, radius=p(radius), fill=paper, outline=ink, width=p(1.4))
+        draw.line(r((margin, margin + toolbar_h, margin + frame_w, margin + toolbar_h)), fill=ink, width=p(1.4))
+        content = contain_resize(source, (viewport_w * scale, viewport_h * scale), page_bg)
+        content_mask = safari_content_mask(frame_w, frame_h, toolbar_h, radius, scale)
+        out.paste(content, (p(margin), p(margin + toolbar_h)), content_mask)
+        address_w = min(560, max(430, int(frame_w * 0.42)))
+        address_box = (margin + (frame_w - address_w) / 2, margin + 14, margin + (frame_w + address_w) / 2, margin + 50)
+        address_outline = (ink[0], ink[1], ink[2], round(ink[3] * 0.7))
+        draw.rounded_rectangle(r(address_box), radius=p(18), fill=toolbar, outline=address_outline, width=p(1.05))
+        text_fit(
+            draw,
+            address,
+            p(address_w - 58),
+            p(12.5),
+            ink,
+            (p((address_box[0] + address_box[2]) / 2), p(margin + 32)),
+        )
+        dot_y = margin + toolbar_h / 2
+        for i, c in enumerate(("ff6159", "ffbd2e", "28c840")):
+            dot = (margin + 20 + i * 24, dot_y - 7.5, margin + 35 + i * 24, dot_y + 7.5)
+            draw.ellipse(r(dot), outline=ink, width=p(1.0), fill=color(c) if light else None)
+        draw.rounded_rectangle(rect, radius=p(radius), outline=ink, width=p(1.4))
+        return out.resize((out.width // scale, out.height // scale), Image.Resampling.LANCZOS)
+
+    frame_fill = color("f5f5f7") if light else color("202124")
+    toolbar_fill = color("f9f9fa") if light else color("15181d")
+    stroke = color("d3d7de") if light else color("343941")
+    control_fill = color("e5e8ed") if light else color("20252c")
+    control_outline = color("cbd0d8") if light else color("303640")
+    address_fill = color("ffffff") if light else color("11151b")
+    address_text = with_alpha(color("2d3138") if light else color("f1f3f5"), 0.8)
+    icon_fill = color("68707c") if light else color("bec5cf")
+    disabled_icon = color("9ca3ae") if light else color("565d68")
+    page_bg = color("ffffff") if light else color("101114")
+
+    draw.rounded_rectangle(rect, radius=p(radius), fill=frame_fill, outline=stroke, width=p(1))
+    draw.rounded_rectangle(r((margin, margin, margin + frame_w, margin + toolbar_h + radius)), radius=p(radius), fill=toolbar_fill)
+    draw.rectangle(r((margin, margin + toolbar_h - 1, margin + frame_w, margin + toolbar_h + radius)), fill=toolbar_fill)
+    draw.line(r((margin, margin + toolbar_h, margin + frame_w, margin + toolbar_h)), fill=stroke, width=p(1))
+
+    content = contain_resize(source, (viewport_w * scale, viewport_h * scale), page_bg)
+    content_mask = safari_content_mask(frame_w, frame_h, toolbar_h, radius, scale)
+    out.paste(content, (p(margin), p(margin + toolbar_h)), content_mask)
+
+    dot_y = margin + toolbar_h / 2
+    for i, c in enumerate(("ff5f57", "febc2e", "28c840")):
+        draw.ellipse(r((margin + 20 + i * 25, dot_y - 7.5, margin + 35 + i * 25, dot_y + 7.5)), fill=color(c))
+
+    sidebar_pill = (margin + 107, margin + 9, margin + 169, margin + 45)
+    draw.rounded_rectangle(r(sidebar_pill), radius=p(18), fill=control_fill, outline=control_outline, width=p(0.8))
+    if not paste_masked_icon(out, sf_masks, "sidebar", (sidebar_pill[0] + 23, margin + 27), (21, 16), icon_fill, scale):
+        draw_safari_icon_scaled(draw, "sidebar", (sidebar_pill[0] + 15, margin + 21, sidebar_pill[0] + 29, margin + 33), icon_fill, scale, 0.95)
+    if not paste_masked_icon(out, sf_masks, "down", (sidebar_pill[2] - 15, margin + 27), (9, 5), icon_fill, scale):
+        draw_icon_scaled(draw, "down", (sidebar_pill[2] - 24, margin + 22, sidebar_pill[2] - 13, margin + 33), icon_fill, scale, 0.9)
+
+    nav_pill = (margin + 179, margin + 9, margin + 251, margin + 45)
+    draw.rounded_rectangle(r(nav_pill), radius=p(18), fill=control_fill, outline=control_outline, width=p(0.8))
+    for idx, kind in enumerate(("back", "forward")):
+        fill = icon_fill if idx == 0 else disabled_icon
+        center = (nav_pill[0] + 19.5 + idx * 32, margin + 27) if idx == 0 else (nav_pill[0] + 16.5 + idx * 35, margin + 27)
+        if not paste_masked_icon(out, sf_masks, kind, center, (10.2, 17), fill, scale):
+            draw_safari_icon_scaled(draw, kind, (nav_pill[0] + 18 + idx * 31, margin + 20, nav_pill[0] + 31 + idx * 31, margin + 34), fill, scale, 0.95)
+    draw.line(r((nav_pill[0] + 37, margin + 16, nav_pill[0] + 37, margin + 38)), fill=control_outline, width=p(0.7))
+
+    address_w = min(560, max(440, int(frame_w * 0.42)))
+    address_box = (margin + (frame_w - address_w) / 2, margin + 8, margin + (frame_w + address_w) / 2, margin + 46)
+    draw.rounded_rectangle(r(address_box), radius=p(19), fill=address_fill, outline=control_outline, width=p(0.85))
+    lock_x = address_box[0] + 20
+    lock_fill = color("1f9d45") if not light else color("1d7f35")
+    if not paste_masked_icon(out, sf_masks, "lock_bold", (lock_x + 1, margin + 27), (11, 14), lock_fill, scale):
+        draw.rounded_rectangle(r((lock_x - 4, margin + 25, lock_x + 5, margin + 35)), radius=p(1.8), outline=icon_fill, width=p(0.8))
+        draw.arc(r((lock_x - 4, margin + 19, lock_x + 5, margin + 31)), 180, 360, fill=icon_fill, width=p(0.8))
+    if not paste_masked_icon(out, sf_masks, "reload", (address_box[2] - 18, margin + 27), 13, with_alpha(icon_fill, 0.9), scale):
+        draw_safari_icon_scaled(draw, "reload", (address_box[2] - 25, margin + 19, address_box[2] - 11, margin + 35), icon_fill, scale, 0.65)
+    text_fit(
+        draw,
+        address,
+        p(address_w - 96),
+        p(13.8),
+        address_text,
+        (p((address_box[0] + address_box[2]) / 2), p(margin + 27)),
+        variation="Semibold",
+    )
+
+    right_pill = (margin + frame_w - 121, margin + 9, margin + frame_w - 7, margin + 45)
+    draw.rounded_rectangle(r(right_pill), radius=p(18), fill=control_fill, outline=control_outline, width=p(0.8))
+    right_icons = (
+        ("share", right_pill[0] + 25, (13.5, 18)),
+        ("plus", right_pill[0] + 57, 15),
+        ("tabs", right_pill[0] + 89.5, 16),
+    )
+    fallback_boxes = {
+        "share": (right_pill[0] + 17, margin + 18, right_pill[0] + 33, margin + 36),
+        "plus": (right_pill[0] + 52, margin + 21, right_pill[0] + 65, margin + 33),
+        "tabs": (right_pill[0] + 84, margin + 20, right_pill[0] + 99, margin + 34),
+    }
+    for key, x_center, size in right_icons:
+        if not paste_masked_icon(out, sf_masks, key, (x_center, margin + 27), size, icon_fill, scale):
+            draw_safari_icon_scaled(draw, key, fallback_boxes[key], icon_fill, scale, 0.9)
+    draw.rounded_rectangle(rect, radius=p(radius), outline=stroke, width=p(1))
+    return out.resize((out.width // scale, out.height // scale), Image.Resampling.LANCZOS)
+
+
+def draw_iphone(source: Image.Image, address: str, light: bool, stylized: bool, shadow: bool) -> Image.Image:
+    screen_w, screen_h = 390, 844
+    bezel = 20 if not stylized else 14
+    frame_w, frame_h = screen_w + bezel * 2, screen_h + bezel * 2
+    margin = 76 if shadow else 24
+    out = Image.new("RGBA", (frame_w + margin * 2, frame_h + margin * 2), (0, 0, 0, 0))
+    rect = (margin, margin, margin + frame_w, margin + frame_h)
+    screen_rect = (margin + bezel, margin + bezel, margin + bezel + screen_w, margin + bezel + screen_h)
+
+    if shadow:
+        add_shadow(out, rect, 62, 110 if light else 170, 38, 20)
+
+    draw = ImageDraw.Draw(out)
+    screen = cover_resize(source, (screen_w, screen_h)).convert("RGBA")
+
+    if stylized:
+        paper = color("fbfbf8") if light else color("111317")
+        ink = color("20242a") if light else color("edf1f6")
+        muted = color("727780") if light else color("a6adb7")
+        draw.rounded_rectangle(rect, radius=58, fill=paper, outline=ink, width=3)
+        out.paste(screen, (screen_rect[0], screen_rect[1]), rounded_mask((screen_w, screen_h), 44))
+        draw.rounded_rectangle(screen_rect, radius=44, outline=ink, width=3)
+        notch = (margin + frame_w // 2 - 54, margin + bezel + 13, margin + frame_w // 2 + 54, margin + bezel + 43)
+        draw.rounded_rectangle(notch, radius=15, fill=paper, outline=ink, width=2)
+        bar = (screen_rect[0] + 38, screen_rect[3] - 64, screen_rect[2] - 38, screen_rect[3] - 22)
+        draw.rounded_rectangle(bar, radius=21, fill=paper, outline=ink, width=2)
+        text_fit(draw, address, screen_w - 120, 14, muted, ((bar[0] + bar[2]) / 2, (bar[1] + bar[3]) / 2))
+        return out
+
+    frame_fill = color("f7f7f8") if light else color("0c0d0f")
+    edge = color("cfd2d7") if light else color("292c31")
+    ui_fill = color("f9f9faee") if light else color("1c1d20ee")
+    ui_text = color("252a31") if light else color("f1f3f6")
+    draw.rounded_rectangle(rect, radius=64, fill=edge)
+    inner = (margin + 4, margin + 4, margin + frame_w - 4, margin + frame_h - 4)
+    draw.rounded_rectangle(inner, radius=60, fill=frame_fill)
+    out.paste(screen, (screen_rect[0], screen_rect[1]), rounded_mask((screen_w, screen_h), 44))
+    draw.rounded_rectangle(screen_rect, radius=44, outline=edge, width=1)
+    notch = (margin + frame_w // 2 - 58, margin + bezel + 11, margin + frame_w // 2 + 58, margin + bezel + 44)
+    draw.rounded_rectangle(notch, radius=17, fill=frame_fill)
+    draw.ellipse((notch[2] - 28, notch[1] + 10, notch[2] - 18, notch[1] + 20), fill=color("202329") if light else color("111214"))
+    bar = (screen_rect[0] + 28, screen_rect[3] - 74, screen_rect[2] - 28, screen_rect[3] - 24)
+    draw.rounded_rectangle(bar, radius=25, fill=ui_fill)
+    draw_icon(draw, "back", (bar[0] + 16, bar[1] + 14, bar[0] + 38, bar[1] + 36), ui_text, 2)
+    text_fit(draw, address, screen_w - 150, 14, ui_text, ((bar[0] + bar[2]) / 2, (bar[1] + bar[3]) / 2))
+    draw_icon(draw, "share", (bar[2] - 44, bar[1] + 11, bar[2] - 16, bar[1] + 39), ui_text, 2)
+    return out
+
+
+def stack_offset(args: argparse.Namespace) -> tuple[int, int]:
+    offset_x = -args.left if args.left is not None else args.right
+    offset_y = -args.top if args.top is not None else args.bottom
+    return 80 if offset_x is None else offset_x, 50 if offset_y is None else offset_y
+
+
+def scale_stack_frames(frames: list[Image.Image], scale_down: float) -> list[Image.Image]:
+    if scale_down == 0 or len(frames) == 1:
+        return frames
+
+    scaled_frames = []
+    level_factor = 1 - scale_down
+    for index, frame in enumerate(frames):
+        factor = level_factor**index
+        if factor == 1:
+            scaled_frames.append(frame)
+            continue
+        size = (max(1, round(frame.width * factor)), max(1, round(frame.height * factor)))
+        scaled_frames.append(frame.resize(size, Image.Resampling.LANCZOS))
+    return scaled_frames
+
+
+def stack_frames(
+    frames: list[Image.Image],
+    offset_x: int,
+    offset_y: int,
+    scale_down: float = 0.0,
+) -> tuple[Image.Image, list[tuple[int, int]]]:
+    if len(frames) == 1:
+        return frames[0], [(0, 0)]
+
+    level_factor = 1 - scale_down
+    raw_positions = [(0, 0)]
+    x = y = 0.0
+    for index in range(1, len(frames)):
+        step_scale = level_factor ** (index - 1)
+        x += -offset_x * step_scale
+        y += -offset_y * step_scale
+        raw_positions.append((round(x), round(y)))
+    min_x = min(x for x, _y in raw_positions)
+    min_y = min(y for _x, y in raw_positions)
+    positions = [(x - min_x, y - min_y) for x, y in raw_positions]
+    width = max(x + frame.width for frame, (x, _y) in zip(frames, positions))
+    height = max(y + frame.height for frame, (_x, y) in zip(frames, positions))
+    out = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+
+    for frame, position in reversed(list(zip(frames, positions))):
+        out.alpha_composite(frame, position)
+    return out, positions
+
+
+def default_output(source: Path, stacked: bool, iphone: bool, stylized: bool, light: bool) -> Path:
+    parts = ["safari"]
+    if stacked:
+        parts.append("stack")
+    if iphone:
+        parts.append("iphone")
+    parts.append("stylized" if stylized else "realistic")
+    parts.append("light" if light else "dark")
+    return source.with_name(source.name + "." + "-".join(parts) + ".png")
+
+
+def main() -> int:
+    args = parse_args()
+    source_paths = [Path(sourcefile) for sourcefile in args.sourcefile]
+    for source_path in source_paths:
+        if not source_path.exists():
+            print(f"browsershot: source file not found: {source_path}", file=sys.stderr)
+            return 2
+
+    frames = []
+    source_transforms = []
+    for source_path, mask_ops in zip(source_paths, args.source_mask_ops):
+        try:
+            source = Image.open(source_path).convert("RGBA")
+        except Exception as exc:
+            print(f"browsershot: could not open image {source_path}: {exc}", file=sys.stderr)
+            return 2
+        try:
+            source = apply_mask_ops(source, mask_ops)
+        except ValueError as exc:
+            print(f"browsershot: invalid mask for {source_path}: {exc}", file=sys.stderr)
+            return 2
+
+        shadow = not args.no_shadow
+        source_transforms.append(
+            iphone_source_transform(source, args.stylized, shadow)
+            if args.iphone
+            else safari_source_transform(source, args.stylized, shadow)
+        )
+        frames.append(
+            draw_iphone(source, args.address, args.light, args.stylized, shadow)
+            if args.iphone
+            else draw_safari(source, args.address, args.light, args.stylized, shadow)
+        )
+
+    frames = scale_stack_frames(frames, args.scale)
+    framed, frame_positions = stack_frames(frames, *stack_offset(args), scale_down=args.scale)
+    top_source_origin, top_source_scale = source_transforms[0]
+    top_frame_position = frame_positions[0]
+    top_source_origin = (top_source_origin[0] + top_frame_position[0], top_source_origin[1] + top_frame_position[1])
+    try:
+        framed, overlay_shift = apply_overlays(framed, args.overlay, top_source_origin, top_source_scale)
+        top_source_origin = (top_source_origin[0] + overlay_shift[0], top_source_origin[1] + overlay_shift[1])
+        framed = apply_cursors(framed, args.cursor, top_source_origin, top_source_scale)
+    except ValueError as exc:
+        print(f"browsershot: {exc}", file=sys.stderr)
+        return 2
+    output_path = (
+        Path(args.output)
+        if args.output
+        else default_output(source_paths[0], len(source_paths) > 1, args.iphone, args.stylized, args.light)
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    framed.save(output_path)
+    print(output_path)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -98,6 +98,19 @@ button {
 .topbar .repo {
   color: var(--fg-dim);
 }
+.topbar .keep-files {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-dim);
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+.topbar .keep-files input {
+  cursor: pointer;
+  margin: 0;
+}
 
 /* ---- Shell: left code surface | right content ---- */
 .body {
@@ -512,15 +525,45 @@ button {
 }
 
 .callout {
+  /* --callout-accent defaults to orange; type variants below override it. */
+  --callout-accent: var(--orange);
   background: var(--bg-panel);
-  border-left: 3px solid var(--orange);
+  border-left: 3px solid var(--callout-accent);
   padding: 8px 12px;
   margin: 10px 0;
   border-radius: 0 4px 4px 0;
 }
 .callout .callout-title {
-  color: var(--orange);
+  color: var(--callout-accent);
   font-weight: 600;
+}
+.callout .callout-body > :first-child {
+  margin-top: 4px;
+}
+.callout .callout-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* Obsidian-style callout types map to the Monokai palette. */
+.callout-note,
+.callout-info {
+  --callout-accent: var(--accent);
+}
+.callout-tip,
+.callout-success {
+  --callout-accent: var(--accent-2);
+}
+.callout-important {
+  --callout-accent: var(--purple);
+}
+.callout-warning,
+.callout-caution {
+  --callout-accent: var(--yellow);
+}
+.callout-danger,
+.callout-error,
+.callout-bug {
+  --callout-accent: var(--pink);
 }
 
 .empty {

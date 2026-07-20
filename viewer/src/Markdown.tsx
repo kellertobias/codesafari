@@ -60,6 +60,28 @@ function renderMarkdown(source: string): string {
     return `<a href="#" class="file-link" data-file="${escapeAttr(path)}"${lineAttr}${titleAttr}>${text}</a>`;
   };
 
+  // Obsidian-style callouts: a blockquote whose first line is `> [!TYPE] Title`
+  // renders as a titled callout box instead of a plain quote. The marker is a
+  // Markdown-body feature, independent of how a step was authored in source.
+  renderer.blockquote = function blockquote({ text, tokens }) {
+    const firstLine = text.trimStart().split('\n', 1)[0];
+    const marker = /^\[!(\w+)\]([+-]?)\s*(.*)$/.exec(firstLine);
+    if (marker) {
+      const type = marker[1].toLowerCase();
+      const title = marker[3].trim() || capitalize(type);
+      // Re-parse everything after the marker line as the callout body.
+      const body = text.replace(/^[^\n]*(\n|$)/, '');
+      const bodyHtml = marked.parse(body, { renderer, async: false }) as string;
+      return (
+        `<div class="callout callout-${escapeAttr(type)}">` +
+        `<div class="callout-title">${escapeHtml(title)}</div>` +
+        `<div class="callout-body">${bodyHtml}</div>` +
+        `</div>`
+      );
+    }
+    return `<blockquote>${this.parser.parse(tokens)}</blockquote>`;
+  };
+
   // Emit mermaid fences as placeholders we hydrate after mount.
   renderer.code = ({ text, lang }) => {
     if (lang === 'mermaid') {
@@ -70,6 +92,10 @@ function renderMarkdown(source: string): string {
   };
 
   return marked.parse(source, { renderer, async: false }) as string;
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function escapeHtml(text: string): string {

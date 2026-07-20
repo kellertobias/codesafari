@@ -98,14 +98,23 @@ function classifyAnchor(line: string): StepAnchorKind {
 /** Find the end of a brace-delimited block (C-like languages), 1-based. */
 function blockEndByBraces(lines: string[], startIdx: number): number {
   // Scan forward to the first '{'; if none appears soon, treat as single line.
+  // Braces inside a parameter list are skipped so a destructured signature like
+  // `function C({ start = 0 }: Props) {` isn't mistaken for the body block.
   let depth = 0;
+  let parenDepth = 0;
   let sawBrace = false;
   for (let i = startIdx; i < lines.length; i++) {
     for (const ch of lines[i]) {
-      if (ch === '{') {
+      if (ch === '(') {
+        parenDepth++;
+      } else if (ch === ')') {
+        if (parenDepth > 0) parenDepth--;
+      } else if (ch === '{') {
+        if (parenDepth > 0) continue; // e.g. object destructuring in params
         depth++;
         sawBrace = true;
       } else if (ch === '}') {
+        if (parenDepth > 0) continue;
         depth--;
         if (sawBrace && depth === 0) return i + 1;
       }

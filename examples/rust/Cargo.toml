@@ -1,0 +1,8 @@
+[package]
+name = "wordcount"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "wordcount"
+path = "src/main.rs"

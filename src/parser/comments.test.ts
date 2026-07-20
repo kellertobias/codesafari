@@ -46,6 +46,29 @@ describe('scanComments', () => {
     expect(comment.nextCodeLine).toBe(5);
   });
 
+  it('parses a triple-quoted docstring block (Python)', () => {
+    const src = [
+      '"""',
+      '@tour setup:2 Configure',
+      'Reads the config file.',
+      '"""',
+      'def configure(): pass',
+    ].join('\n');
+    const [comment] = scanComments(src);
+    expect(comment.tourSlug).toBe('setup');
+    expect(comment.title).toBe('Configure');
+    expect(comment.body).toBe('Reads the config file.');
+    expect(comment.nextCodeLine).toBe(5);
+  });
+
+  it('parses a single-quote triple docstring block (Python)', () => {
+    const src = ["'''@tour setup:3 Go", "Body.", "'''", 'x = 1'].join('\n');
+    const [comment] = scanComments(src);
+    expect(comment.tourSlug).toBe('setup');
+    expect(comment.order).toBe('3');
+    expect(comment.body).toBe('Body.');
+  });
+
   it('recognizes non-step callouts', () => {
     const src = ['// @tour comment Watch out', '// Not thread-safe.'].join('\n');
     const [comment] = scanComments(src);

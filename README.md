@@ -4,6 +4,8 @@ Turn a `.tour/` folder plus inline `@tour` source comments into a **local, offli
 
 `@tobisk/codesafari` is a self-contained TypeScript/React tool you run with `npx`. It reads authored Markdown and inline code comments, builds a manifest of your project's guided tours, and serves them through a VS Code-like read-only viewer with a Monokai theme. It can run live with file watching (`dev`) or emit a fully static, backend-free site (`export`).
 
+![The CodeSafari viewer mid-tour: the file tree open on the left, a source file open in the code pane, and the step panel on the right.](docs/viewer-explorer.safari.png)
+
 > Status: **early development.** The content model, parser, and CLI (`validate`) are the first pieces landing. See [Roadmap](#roadmap).
 
 ## Why
@@ -176,6 +178,31 @@ npm run safari   # build the core + viewer, then serve the tour at http://localh
 ```
 
 `npm run safari` runs CodeSafari on CodeSafari. The `.tour/` folder and the `@tour` comments throughout `src/` and `viewer/src/` drive a two-tour walkthrough of the codebase.
+
+## Tests
+
+Unit and integration tests run under Vitest; end-to-end tests drive the real
+`dev` server with Playwright (headless Chromium), against this self-touring repo.
+
+```bash
+npm test          # unit + integration (Vitest)
+npm run test:e2e  # end-to-end viewer tests (Playwright)
+```
+
+The e2e suite exercises the landing page, the file-tree toggle, and stepping a
+tour. One spec (`e2e/screenshot.spec.ts`) also captures the viewer with the file
+tree and a file open, which powers the README screenshot:
+
+```bash
+npm run screenshot
+```
+
+`npm run screenshot` runs that one spec to write `docs/viewer-explorer.png`, then
+wraps it in dark-mode Safari chrome with the vendored
+[browsershot](https://github.com/kellertobias/browsershot) tool
+(`scripts/browsershot`, run in an isolated Python venv) to produce
+`docs/viewer-explorer.safari.png` — the image shown at the top of this README.
+The framing step needs macOS; on other platforms the raw capture is still written.
 
 ## License
 

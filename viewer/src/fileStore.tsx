@@ -53,7 +53,25 @@ interface FileStore {
   activateTab: (path: string) => void;
   /** Close a tab; focus a neighbour if it was active. */
   closeTab: (path: string) => void;
+  /** Close every tab and the file tree, clearing the whole left surface. */
+  closeAll: () => void;
   toggleTree: () => void;
+  /**
+   * When true, returning to the overview / a tour intro keeps open files and
+   * the tree instead of closing them. Persisted to localStorage.
+   */
+  keepFilesOpen: boolean;
+  setKeepFilesOpen: (value: boolean) => void;
+}
+
+const KEEP_FILES_KEY = 'codesafari:keepFilesOpen';
+
+function readKeepFilesOpen(): boolean {
+  try {
+    return localStorage.getItem(KEEP_FILES_KEY) === '1';
+  } catch {
+    return false;
+  }
 }
 
 const Ctx = createContext<FileStore | null>(null);
@@ -71,6 +89,7 @@ export function FileProvider({
   const [context, setContext] = useState<LineRange | null>(null);
   const [highlightPath, setHighlightPath] = useState<string | null>(null);
   const [treeOpen, setTreeOpen] = useState(false);
+  const [keepFilesOpen, setKeepFilesOpenState] = useState(readKeepFilesOpen);
 
   const openRange = useCallback(
     (path: string, range: LineRange | null, ctx: LineRange | null = null) => {
@@ -110,7 +129,25 @@ export function FileProvider({
     [],
   );
 
+  const closeAll = useCallback(() => {
+    setTabs([]);
+    setActivePath(null);
+    setHighlight(null);
+    setContext(null);
+    setHighlightPath(null);
+    setTreeOpen(false);
+  }, []);
+
   const toggleTree = useCallback(() => setTreeOpen((v) => !v), []);
+
+  const setKeepFilesOpen = useCallback((value: boolean) => {
+    setKeepFilesOpenState(value);
+    try {
+      localStorage.setItem(KEEP_FILES_KEY, value ? '1' : '0');
+    } catch {
+      /* ignore unavailable storage */
+    }
+  }, []);
 
   const value = useMemo<FileStore>(
     () => ({
@@ -125,7 +162,10 @@ export function FileProvider({
       openRange,
       activateTab,
       closeTab,
+      closeAll,
       toggleTree,
+      keepFilesOpen,
+      setKeepFilesOpen,
     }),
     [
       files,
@@ -139,7 +179,10 @@ export function FileProvider({
       openRange,
       activateTab,
       closeTab,
+      closeAll,
       toggleTree,
+      keepFilesOpen,
+      setKeepFilesOpen,
     ],
   );
 

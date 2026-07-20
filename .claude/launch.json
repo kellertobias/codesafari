@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "safari",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["dist/cli.js", "dev", ".", "--port", "4317"],
+      "port": 4317
+    }
+  ]
+}

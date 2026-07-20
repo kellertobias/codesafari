@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import type { Manifest } from '../../src/model/types';
 import { isDevMode, loadManifest } from './manifest';
 import { href, useRoute } from './router';
-import { FileProvider } from './fileStore';
+import { FileProvider, useFileStore } from './fileStore';
 import { ExplorerPane } from './ExplorerPane';
 import { Landing } from './pages/Landing';
 import { ComponentDetail } from './pages/ComponentDetail';
@@ -59,38 +59,75 @@ export function App(): JSX.Element {
 
   return (
     <FileProvider files={manifest.files}>
-      <div className="app">
-        {isDevMode() && (
-          <div className="banner">Live dev mode — edits reload automatically.</div>
-        )}
-        <header className="topbar">
-          <a className="brand" href={href('/')}>
-            code<span className="dot">·</span>safari
-          </a>
-          <nav>
-            <a href={href('/')}>Overview</a>
-            {manifest.glossary.length > 0 && <a href={href('/glossary')}>Glossary</a>}
-          </nav>
-          <span className="spacer" />
-          {manifest.project.repositoryUrl && (
-            <a
-              className="repo"
-              href={manifest.project.repositoryUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Repository ↗
-            </a>
-          )}
-        </header>
-        <div className="body">
-          <ExplorerPane />
-          <main className="route">
-            <Router manifest={manifest} segments={route.segments} />
-          </main>
-        </div>
-      </div>
+      <Shell manifest={manifest} route={route} />
     </FileProvider>
+  );
+}
+
+/**
+ * The app chrome, rendered inside the {@link FileProvider} so it can drive the
+ * shared file surface. Landing on the overview or a tour intro clears the open
+ * files and tree by default — unless the user has opted to keep them open.
+ */
+function Shell({
+  manifest,
+  route,
+}: {
+  manifest: Manifest;
+  route: ReturnType<typeof useRoute>;
+}): JSX.Element {
+  const { closeAll, keepFilesOpen, setKeepFilesOpen } = useFileStore();
+
+  // On the overview (no segments) or a tour intro (`/tour/:slug`, not `/run`),
+  // collapse the code surface unless the user chose to keep it open.
+  const [head, , b] = route.segments;
+  const isOverviewLike = head === undefined || (head === 'tour' && b !== 'run');
+  useEffect(() => {
+    if (isOverviewLike && !keepFilesOpen) closeAll();
+    // Keyed on the raw hash so it re-runs on every navigation, not just when
+    // the overview-like flag flips.
+  }, [route.raw, isOverviewLike, keepFilesOpen, closeAll]);
+
+  return (
+    <div className="app">
+      {isDevMode() && (
+        <div className="banner">Live dev mode — edits reload automatically.</div>
+      )}
+      <header className="topbar">
+        <a className="brand" href={href('/')}>
+          code<span className="dot">·</span>safari
+        </a>
+        <nav>
+          <a href={href('/')}>Overview</a>
+          {manifest.glossary.length > 0 && <a href={href('/glossary')}>Glossary</a>}
+        </nav>
+        <span className="spacer" />
+        <label className="keep-files" title="Keep open files when returning to the overview">
+          <input
+            type="checkbox"
+            checked={keepFilesOpen}
+            onChange={(e) => setKeepFilesOpen(e.target.checked)}
+          />
+          Keep files open
+        </label>
+        {manifest.project.repositoryUrl && (
+          <a
+            className="repo"
+            href={manifest.project.repositoryUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Repository ↗
+          </a>
+        )}
+      </header>
+      <div className="body">
+        <ExplorerPane />
+        <main className="route">
+          <Router manifest={manifest} segments={route.segments} />
+        </main>
+      </div>
+    </div>
   );
 }
 
