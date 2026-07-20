@@ -3,6 +3,7 @@
  * content, and pushes rebuild notifications over WebSocket.
  */
 
+import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -14,6 +15,8 @@ import { viewerBuilt, viewerDistDir } from '../commands/paths.js';
 
 export interface DevOptions {
   port: number;
+  /** Open the site in the default browser on startup (default true). */
+  open?: boolean;
 }
 
 const MIME: Record<string, string> = {
@@ -69,8 +72,38 @@ export async function runDev(root: string, options: DevOptions): Promise<void> {
   });
 
   await new Promise<void>((resolve) => server.listen(options.port, resolve));
-  console.log(`CodeSafari dev server running at http://localhost:${options.port}`);
+  const url = `http://localhost:${options.port}`;
+  console.log(`CodeSafari dev server running at ${url}`);
   console.log('Watching .tour/ and source files. Press Ctrl+C to stop.');
+
+  if (options.open !== false) {
+    console.log('Opening your browser…');
+    openBrowser(url);
+  }
+}
+
+/**
+ * Open a URL in the platform's default browser. Best-effort: a missing browser
+ * or launcher never crashes the server.
+ */
+function openBrowser(url: string): void {
+  const command =
+    process.platform === 'darwin'
+      ? 'open'
+      : process.platform === 'win32'
+        ? 'cmd'
+        : 'xdg-open';
+  // On Windows, `start` is a cmd builtin; the empty "" is the window title.
+  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+  try {
+    const child = spawn(command, args, { stdio: 'ignore', detached: true });
+    child.on('error', () => {
+      /* No launcher available (e.g. headless CI); ignore. */
+    });
+    child.unref();
+  } catch {
+    /* Spawning failed outright; ignore. */
+  }
 }
 
 async function rebuild(root: string): Promise<string> {

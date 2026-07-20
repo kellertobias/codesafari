@@ -37,12 +37,13 @@ async function main(): Promise<void> {
     .argument('[root]', 'project directory', process.cwd())
     .description('Serve the viewer with live reload')
     .option('-p, --port <number>', 'dev server port', '4317')
-    .action(async (root: string, opts: { port: string }) => {
+    .option('--no-open', 'do not open the browser on startup')
+    .action(async (root: string, opts: { port: string; open: boolean }) => {
       const port = Number.parseInt(opts.port, 10);
       if (!Number.isInteger(port) || port <= 0) {
         program.error(`Invalid --port value: ${opts.port}`);
       }
-      await runDev(root, { port });
+      await runDev(root, { port, open: opts.open });
     });
 
   program
