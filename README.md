@@ -4,6 +4,8 @@ Turn a `.tour/` folder plus inline `@tour` source comments into a **local, offli
 
 `@tobisk/codesafari` is a self-contained TypeScript/React tool you run with `npx`. It reads authored Markdown and inline code comments, builds a manifest of your project's guided tours, and serves them through a VS Code-like read-only viewer with a Monokai theme. It can run live with file watching (`dev`) or emit a fully static, backend-free site (`export`).
 
+**[Live demo →](https://kellertobias.github.io/codesafari/)**
+
 ![The CodeSafari viewer mid-tour: the file tree open on the left, a source file open in the code pane, and the step panel on the right.](docs/viewer-explorer.safari.png)
 
 > Status: **early development.** The content model, parser, and CLI (`validate`) are the first pieces landing. See [Roadmap](#roadmap).
