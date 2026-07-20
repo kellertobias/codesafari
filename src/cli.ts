@@ -32,6 +32,10 @@ async function main(): Promise<void> {
     .version(await readVersion(), '-v, --version')
     .showHelpAfterError();
 
+  // @tour:detail The dev command
+  // `dev` builds the manifest, serves the viewer, watches files, and — unless
+  // `--no-open` is passed — opens your browser. This is what `npm run safari`
+  // runs against this very repository.
   program
     .command('dev')
     .argument('[root]', 'project directory', process.cwd())
@@ -56,6 +60,9 @@ async function main(): Promise<void> {
       if (!result.ok) process.exitCode = 1;
     });
 
+  // @tour:detail The validate command
+  // `validate` is the pure check: build the manifest, print diagnostics, and
+  // exit non-zero if anything is wrong. No server, no output written.
   program
     .command('validate')
     .argument('[root]', 'project directory', process.cwd())

@@ -55,18 +55,32 @@ export function FileIcon({ name }: { name: string }): JSX.Element {
 
 /** An amber folder glyph; the open variant is used for expanded directories. */
 export function FolderIcon({ open }: { open: boolean }): JSX.Element {
+  // A defined folder silhouette (tab + body) with an outline so it reads as a
+  // folder against the dark sidebar. Open shows a lifted front flap.
+  const body = '#dcb67a';
+  const edge = '#c79b57';
   return (
     <span className="tree-icon" aria-hidden>
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <svg width="16" height="16" viewBox="0 0 16 16">
         {open ? (
-          <path
-            d="M1.5 4.5A1 1 0 0 1 2.5 3.5h3l1.2 1.4h5.3a1 1 0 0 1 1 1v.6H3.6a1 1 0 0 0-.96.73L1.5 12z"
-            fill="#e2c08d"
-          />
+          <>
+            <path
+              d="M1.5 3.75h4.1l1.4 1.5H14a.9.9 0 0 1 .9.9v.6H4.6a1 1 0 0 0-.94.66L1.5 13V4.65a.9.9 0 0 1 .9-.9z"
+              fill={edge}
+            />
+            <path
+              d="M3.1 7.4a.8.8 0 0 1 .75-.52H15.2a.55.55 0 0 1 .52.74l-1.5 4.32a.9.9 0 0 1-.85.61H1.9z"
+              fill={body}
+              stroke={edge}
+              strokeWidth="0.4"
+            />
+          </>
         ) : (
           <path
-            d="M1.5 4A1 1 0 0 1 2.5 3h3.2l1.3 1.5h6.5a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H2.5a1 1 0 0 1-1-1z"
-            fill="#e2c08d"
+            d="M1.5 4.4a.9.9 0 0 1 .9-.9h3.3l1.4 1.5H13.6a.9.9 0 0 1 .9.9v6a.9.9 0 0 1-.9.9H2.4a.9.9 0 0 1-.9-.9z"
+            fill={body}
+            stroke={edge}
+            strokeWidth="0.5"
           />
         )}
       </svg>

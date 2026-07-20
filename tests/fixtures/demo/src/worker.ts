@@ -2,6 +2,8 @@
 // The producer pushes work onto the queue. The
 // [Queue worker](glossary:queue-worker) drains it later.
 export class Worker {
+  // @tour:detail The run method
+  // Returns the answer to everything.
   run() {
     return 42;
   }

@@ -54,6 +54,24 @@ export interface TourStep {
    * affordances.
    */
   anchor: StepAnchorKind;
+  /**
+   * Sub-steps authored with `@tour:detail` inside this step's highlight range.
+   * Each zooms the highlight to a specific block within the step, in file
+   * order. Navigable as nested steps in the viewer.
+   */
+  details: StepDetail[];
+}
+
+/** A sub-step of a {@link TourStep}, from a `@tour:detail` comment. */
+export interface StepDetail {
+  title: string;
+  /** Markdown body (the rest of the comment block). */
+  body: string;
+  /** The block this detail zooms to (1-based, inclusive). Same file as parent. */
+  highlight: LineRange;
+  /** 1-based line of the detail comment's first line. */
+  commentLine: number;
+  anchor: StepAnchorKind;
 }
 
 export type StepAnchorKind =

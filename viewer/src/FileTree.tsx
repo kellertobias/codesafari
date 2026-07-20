@@ -1,7 +1,9 @@
 /**
  * A VS Code-like file tree: real nested directories with disclosure chevrons,
- * amber folder glyphs, and colored per-extension file badges. Directories are
- * collapsible; the ancestors of the active file are always kept expanded.
+ * folder glyphs, colored per-extension file badges, and indent guide lines.
+ *
+ * Folders are collapsed by default; only the directories on the path to the
+ * active file are expanded (and re-expanded when the active file changes).
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -61,7 +63,8 @@ function sortTree(node: TreeNode): void {
 }
 
 /** Every ancestor directory path of a file path. */
-function ancestorsOf(filePath: string): string[] {
+function ancestorsOf(filePath: string | null): string[] {
+  if (!filePath) return [];
   const parts = filePath.split('/');
   const out: string[] = [];
   let prefix = '';
@@ -79,23 +82,25 @@ export function FileTree({
 }: FileTreeProps): JSX.Element {
   const root = useMemo(() => buildTree(files), [files]);
 
-  // Directories are expanded by default; the set tracks collapsed ones.
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Collapsed by default: only the active file's ancestors start expanded.
+  const [expanded, setExpanded] = useState<Set<string>>(
+    () => new Set(ancestorsOf(activePath)),
+  );
 
-  // Keep the active file's ancestors expanded when the step changes files.
+  // Re-expand the active file's ancestors whenever it changes.
   useEffect(() => {
-    if (!activePath) return;
     const ancestors = ancestorsOf(activePath);
-    setCollapsed((prev) => {
-      if (!ancestors.some((a) => prev.has(a))) return prev;
+    if (ancestors.length === 0) return;
+    setExpanded((prev) => {
+      if (ancestors.every((a) => prev.has(a))) return prev;
       const next = new Set(prev);
-      for (const a of ancestors) next.delete(a);
+      for (const a of ancestors) next.add(a);
       return next;
     });
   }, [activePath]);
 
   const toggle = (path: string) =>
-    setCollapsed((prev) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(path)) next.delete(path);
       else next.add(path);
@@ -110,19 +115,28 @@ export function FileTree({
     );
   }
 
+  // `depth` vertical guides give both indentation and the folder-nesting lines.
+  const guides = (depth: number) =>
+    depth === 0 ? null : (
+      <span className="indent-guides" aria-hidden>
+        {Array.from({ length: depth }, (_, i) => (
+          <span key={i} className="indent-guide" />
+        ))}
+      </span>
+    );
+
   const renderNodes = (nodes: TreeNode[], depth: number): JSX.Element[] =>
     nodes.flatMap((node) => {
-      const indent = 6 + depth * 12;
       if (node.type === 'dir') {
-        const open = !collapsed.has(node.path);
+        const open = expanded.has(node.path);
         return [
           <button
             key={node.path}
             className="tree-row tree-dir-row"
-            style={{ paddingLeft: indent }}
             onClick={() => toggle(node.path)}
             title={node.path}
           >
+            {guides(depth)}
             <ChevronIcon open={open} />
             <FolderIcon open={open} />
             <span className="tree-label">{node.name}</span>
@@ -134,10 +148,10 @@ export function FileTree({
         <button
           key={node.path}
           className={`tree-row tree-file-row${node.path === activePath ? ' active' : ''}`}
-          style={{ paddingLeft: indent }}
           onClick={() => onSelect(node.path)}
           title={node.path}
         >
+          {guides(depth)}
           <span className="tree-chevron" aria-hidden />
           <FileIcon name={node.name} />
           <span className="tree-label">{node.name}</span>

@@ -17,6 +17,7 @@ import type {
   Manifest,
   SourceCallout,
   SourceFile,
+  StepDetail,
   Tour,
   TourStep,
 } from '../model/types.js';
@@ -78,6 +79,8 @@ export async function buildManifest(
   const callouts: SourceCallout[] = [];
   /** Every non-ignored source file, so the viewer's tree can browse them all. */
   const allSourceFiles = new Set<string>();
+  /** `@tour:detail` sub-steps, assigned to their enclosing step after sorting. */
+  const pendingDetails: Array<{ file: string; detail: StepDetail }> = [];
   const projectDefault = content.project.defaultSnippetLines;
 
   // 2–4. Scan source files for comments and resolve targets.
@@ -118,6 +121,28 @@ export async function buildManifest(
         continue;
       }
 
+      if (comment.kind === 'detail') {
+        // Resolve the block this detail zooms to; assign to a step later.
+        const resolved = resolveTarget(
+          lines,
+          comment.nextCodeLine,
+          comment.startLine,
+          projectDefault,
+          language,
+        );
+        pendingDetails.push({
+          file: relPath,
+          detail: {
+            title: comment.title,
+            body: comment.body,
+            highlight: resolved.highlight,
+            commentLine: comment.startLine,
+            anchor: resolved.anchor,
+          },
+        });
+        continue;
+      }
+
       const tour = tourBySlug.get(comment.tourSlug!);
       if (!tour) {
         diagnostics.push({
@@ -147,10 +172,13 @@ export async function buildManifest(
         highlight,
         commentLine: comment.startLine,
         anchor,
+        details: [],
       };
       tour.steps.push(step);
     }
   }
+
+  assignDetails(pendingDetails, [...tourBySlug.values()], diagnostics);
 
   // Sort steps and detect duplicate order keys within a tour.
   for (const tour of tourBySlug.values()) {
@@ -200,6 +228,54 @@ export async function buildManifest(
   };
 
   return { manifest, diagnostics };
+}
+
+/**
+ * Attach each `@tour:detail` sub-step to the step whose highlight range encloses
+ * it. When several steps in the same file enclose a detail (e.g. a class step
+ * and a method step), the innermost — smallest — range wins. Orphan details
+ * (inside no step) become warnings. Details are kept in file order.
+ */
+function assignDetails(
+  pending: Array<{ file: string; detail: StepDetail }>,
+  tours: Tour[],
+  diagnostics: Diagnostic[],
+): void {
+  const stepsByFile = new Map<string, TourStep[]>();
+  for (const tour of tours) {
+    for (const step of tour.steps) {
+      const list = stepsByFile.get(step.file) ?? [];
+      list.push(step);
+      stepsByFile.set(step.file, list);
+    }
+  }
+
+  for (const { file, detail } of pending) {
+    const candidates = (stepsByFile.get(file) ?? []).filter(
+      (step) =>
+        detail.commentLine >= step.highlight.start &&
+        detail.commentLine <= step.highlight.end,
+    );
+    if (candidates.length === 0) {
+      diagnostics.push({
+        severity: 'warning',
+        file,
+        line: detail.commentLine,
+        message: `@tour:detail "${detail.title}" is not inside any step's range; ignored.`,
+      });
+      continue;
+    }
+    // Innermost enclosing step: the smallest highlight span.
+    const span = (s: TourStep) => s.highlight.end - s.highlight.start;
+    const owner = candidates.reduce((a, b) => (span(b) < span(a) ? b : a));
+    owner.details.push(detail);
+  }
+
+  for (const list of stepsByFile.values()) {
+    for (const step of list) {
+      step.details.sort((a, b) => a.commentLine - b.commentLine);
+    }
+  }
 }
 
 // @tour pipeline:4 Checking cross-references

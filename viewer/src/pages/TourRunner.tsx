@@ -1,22 +1,29 @@
 /**
- * The running-tour panel — the right-hand side of the shell. It shows the
- * current step's prose and navigation, and drives the shared file store so the
- * left code surface follows the step. "Sneak around" browsing (opening other
- * files from the tree or from Markdown references) happens in that shared
- * surface without disturbing this panel.
+ * The running-tour panel — the right side of the shell. It shows the current
+ * step (or detail sub-step) and navigation, and drives the shared file store so
+ * the left code surface follows along. Steps may contain `@tour:detail`
+ * sub-steps that zoom to a block within the step; they are flattened into the
+ * Prev/Next sequence and shown nested in the overview.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Manifest } from '../../../src/model/types';
 import { Markdown } from '../Markdown';
 import { useFileStore } from '../fileStore';
 import { href } from '../router';
 
+/** A position in the flattened step/detail navigation sequence. */
+interface Pos {
+  stepIndex: number;
+  /** null → the step itself; otherwise the index into step.details. */
+  detailIndex: number | null;
+}
+
 // @tour viewer:3 The tour runner panel
 // This is the panel you're reading in — the right side of the shell. Stepping
 // calls the shared file store's `openRange`, which drives the code surface on
-// the left to the step's file and highlight. Opening any other file (from the
-// tree or a Markdown reference) leaves this panel untouched.
+// the left. Detail sub-steps share the step's file, so moving to one scrolls
+// within the same tab; moving to a step in another file opens/focuses its tab.
 export function TourRunner({
   manifest,
   slug,
@@ -25,36 +32,55 @@ export function TourRunner({
   slug: string;
 }): JSX.Element {
   const tour = manifest.tours.find((t) => t.slug === slug);
-  const { openPath, openRange } = useFileStore();
-
+  const { activePath, openRange } = useFileStore();
   const steps = tour?.steps ?? [];
-  // The step index is derived from history via a piece of local state kept in
-  // sync below; using the store for the file keeps the code pane authoritative.
-  const [stepIndex, setStepIndex] = useStepIndex(slug);
-  const currentStep = steps[stepIndex];
 
-  const goToStep = useCallback(
-    (index: number) => setStepIndex(index),
-    [setStepIndex],
+  // Flatten steps and their details into one navigable sequence.
+  const flat = useMemo<Pos[]>(() => {
+    const arr: Pos[] = [];
+    steps.forEach((step, i) => {
+      arr.push({ stepIndex: i, detailIndex: null });
+      step.details.forEach((_, j) => arr.push({ stepIndex: i, detailIndex: j }));
+    });
+    return arr;
+  }, [steps]);
+
+  const [posIndex, setPosIndex] = usePosIndex(slug);
+  const pos = flat[posIndex] ?? { stepIndex: 0, detailIndex: null };
+  const currentStep = steps[pos.stepIndex];
+  const currentDetail =
+    currentStep && pos.detailIndex !== null
+      ? currentStep.details[pos.detailIndex]
+      : null;
+
+  const goToPos = useCallback((n: number) => setPosIndex(n), [setPosIndex]);
+  const flatIndexOf = useCallback(
+    (stepIndex: number, detailIndex: number | null) =>
+      flat.findIndex(
+        (p) => p.stepIndex === stepIndex && p.detailIndex === detailIndex,
+      ),
+    [flat],
   );
 
-  // Drive the left code surface whenever the current step changes.
+  // Drive the left code surface to the current step/detail target.
   useEffect(() => {
-    if (currentStep) openRange(currentStep.file, currentStep.highlight);
-  }, [currentStep, openRange]);
+    if (!currentStep) return;
+    const range = currentDetail ? currentDetail.highlight : currentStep.highlight;
+    openRange(currentStep.file, range);
+  }, [currentStep, currentDetail, openRange]);
 
-  // Keyboard navigation: left/right arrows move between steps.
+  // Keyboard navigation: left/right arrows move through the sequence.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight' && stepIndex < steps.length - 1) {
-        goToStep(stepIndex + 1);
-      } else if (e.key === 'ArrowLeft' && stepIndex > 0) {
-        goToStep(stepIndex - 1);
+      if (e.key === 'ArrowRight' && posIndex < flat.length - 1) {
+        goToPos(posIndex + 1);
+      } else if (e.key === 'ArrowLeft' && posIndex > 0) {
+        goToPos(posIndex - 1);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [stepIndex, steps.length, goToStep]);
+  }, [posIndex, flat.length, goToPos]);
 
   if (!tour) {
     return (
@@ -66,9 +92,9 @@ export function TourRunner({
   }
 
   const browsingAway =
-    currentStep && openPath !== null && openPath !== currentStep.file;
-  const calloutsForFile = openPath
-    ? manifest.callouts.filter((c) => c.file === openPath)
+    currentStep && activePath !== null && activePath !== currentStep.file;
+  const calloutsForFile = activePath
+    ? manifest.callouts.filter((c) => c.file === activePath)
     : [];
 
   return (
@@ -80,8 +106,13 @@ export function TourRunner({
       <div className="tour-panel-body">
         {currentStep ? (
           <>
-            <h2 style={{ marginTop: 0 }}>{currentStep.title}</h2>
-            <Markdown source={currentStep.body} />
+            {currentDetail && (
+              <div className="detail-crumb">in {currentStep.title}</div>
+            )}
+            <h2 style={{ marginTop: 0 }}>
+              {currentDetail ? currentDetail.title : currentStep.title}
+            </h2>
+            <Markdown source={currentDetail ? currentDetail.body : currentStep.body} />
           </>
         ) : (
           <p className="empty">This tour has no steps.</p>
@@ -89,10 +120,15 @@ export function TourRunner({
 
         {browsingAway && currentStep && (
           <p className="empty" style={{ marginTop: 16 }}>
-            Browsing <code>{openPath}</code> —{' '}
+            Browsing <code>{activePath}</code> —{' '}
             <button
               className="link-button"
-              onClick={() => openRange(currentStep.file, currentStep.highlight)}
+              onClick={() =>
+                openRange(
+                  currentStep.file,
+                  currentDetail ? currentDetail.highlight : currentStep.highlight,
+                )
+              }
             >
               return to step
             </button>
@@ -111,53 +147,69 @@ export function TourRunner({
         )}
 
         <div className="step-overview">
-          {steps.map((step, i) => (
-            <button
-              key={`${step.file}:${step.order}`}
-              className={`step-overview-item${i === stepIndex && !browsingAway ? ' active' : ''}`}
-              onClick={() => goToStep(i)}
-            >
-              <span className="order">{step.order}</span>
-              {step.title}
-            </button>
-          ))}
+          {steps.map((step, i) => {
+            const stepActive =
+              pos.stepIndex === i && pos.detailIndex === null && !browsingAway;
+            return (
+              <div key={`${step.file}:${step.order}`}>
+                <button
+                  className={`step-overview-item${stepActive ? ' active' : ''}`}
+                  onClick={() => goToPos(flatIndexOf(i, null))}
+                >
+                  <span className="order">{step.order}</span>
+                  {step.title}
+                </button>
+                {step.details.map((detail, j) => {
+                  const detailActive =
+                    pos.stepIndex === i && pos.detailIndex === j && !browsingAway;
+                  return (
+                    <button
+                      key={j}
+                      className={`step-overview-item detail${detailActive ? ' active' : ''}`}
+                      onClick={() => goToPos(flatIndexOf(i, j))}
+                    >
+                      <span className="detail-dot">└</span>
+                      {detail.title}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
       </div>
 
       <div className="tour-panel-nav">
         <button
           className="btn secondary"
-          disabled={stepIndex === 0}
-          onClick={() => goToStep(stepIndex - 1)}
+          disabled={posIndex === 0}
+          onClick={() => goToPos(posIndex - 1)}
         >
           ← Prev
         </button>
         <button
           className="btn"
-          disabled={stepIndex >= steps.length - 1}
-          onClick={() => goToStep(stepIndex + 1)}
+          disabled={posIndex >= flat.length - 1}
+          onClick={() => goToPos(posIndex + 1)}
         >
           Next →
         </button>
         <span className="spacer" style={{ flex: 1 }} />
         <span className="step-counter">
-          {steps.length === 0 ? '0 / 0' : `${stepIndex + 1} / ${steps.length}`}
+          {flat.length === 0 ? '0 / 0' : `${posIndex + 1} / ${flat.length}`}
         </span>
       </div>
     </div>
   );
 }
 
-/** Step index reset to 0 whenever the tour slug changes. */
-function useStepIndex(slug: string): [number, (n: number) => void] {
+/** Position index in the flattened sequence, reset when the tour slug changes. */
+function usePosIndex(slug: string): [number, (n: number) => void] {
   const [state, setState] = useState<{ slug: string; index: number }>({
     slug,
     index: 0,
   });
   const index = state.slug === slug ? state.index : 0;
-  const set = useCallback(
-    (n: number) => setState({ slug, index: n }),
-    [slug],
-  );
+  const set = useCallback((n: number) => setState({ slug, index: n }), [slug]);
   return [index, set];
 }

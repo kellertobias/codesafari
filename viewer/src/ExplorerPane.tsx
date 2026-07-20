@@ -1,29 +1,36 @@
 /**
  * The left code surface: an activity bar with a folder button that toggles the
- * file tree, the tree itself, and the read-only code viewer for the open file.
+ * file tree, the (resizable) tree, and a tabbed read-only code viewer.
  *
  * When no file is open the surface collapses to just the activity bar, giving
- * the right-hand content full width. Opening a file (from the tree, a tour
- * step, or a Markdown reference) only affects this pane.
+ * the right-hand content full width.
  */
 
-import { useMemo } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { SourceFile } from '../../src/model/types';
 import { useFileStore } from './fileStore';
 import { FileTree } from './FileTree';
 import { CodeViewer } from './code/CodeViewer';
+import { Tabs } from './code/Tabs';
 import { ExplorerIcon } from './tree/icons';
+
+const MIN_TREE = 160;
+const MAX_TREE = 520;
 
 export function ExplorerPane(): JSX.Element {
   const {
     files,
-    openPath,
+    tabs,
+    activePath,
     highlight,
+    highlightPath,
     treeOpen,
     openFile,
-    closeFile,
     toggleTree,
   } = useFileStore();
+
+  const [treeWidth, setTreeWidth] = useState(240);
+  const dragging = useRef(false);
 
   const fileByPath = useMemo(() => {
     const map = new Map<string, SourceFile>();
@@ -31,10 +38,41 @@ export function ExplorerPane(): JSX.Element {
     return map;
   }, [files]);
 
-  const activeFile = openPath ? fileByPath.get(openPath) : undefined;
+  const activeFile = activePath ? fileByPath.get(activePath) : undefined;
+  // A highlight only applies to the file it was opened for.
+  const activeHighlight = activePath === highlightPath ? highlight : null;
+
+  // Drag-to-resize the tree pane.
+  const onDragStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    dragging.current = true;
+    const startX = e.clientX;
+    const startWidth = treeWidthRef.current;
+    // Suppress text selection and show the resize cursor for the whole drag.
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    const onMove = (ev: PointerEvent) => {
+      if (!dragging.current) return;
+      const next = Math.min(MAX_TREE, Math.max(MIN_TREE, startWidth + (ev.clientX - startX)));
+      setTreeWidth(next);
+    };
+    const onUp = () => {
+      dragging.current = false;
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }, []);
+
+  // Keep a ref of the latest width for the drag closure.
+  const treeWidthRef = useRef(treeWidth);
+  treeWidthRef.current = treeWidth;
 
   return (
-    <div className={`explorer${openPath ? ' has-file' : ''}`}>
+    <div className="explorer">
       <div className="activity-bar">
         <button
           className={`activity-btn${treeOpen ? ' active' : ''}`}
@@ -48,29 +86,38 @@ export function ExplorerPane(): JSX.Element {
       </div>
 
       {treeOpen && (
-        <div className="pane tree">
-          <div className="pane-header">Explorer</div>
-          <FileTree
-            files={files}
-            activePath={openPath}
-            onSelect={(path) => openFile(path)}
+        <>
+          <div className="pane tree" style={{ width: treeWidth, flexBasis: treeWidth }}>
+            <div className="pane-header">Explorer</div>
+            <FileTree
+              files={files}
+              activePath={activePath}
+              onSelect={(path) => openFile(path)}
+            />
+          </div>
+          <div
+            className="resize-handle"
+            onPointerDown={onDragStart}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize file tree"
           />
-        </div>
+        </>
       )}
 
-      {openPath && (
+      {tabs.length > 0 && (
         <div className="pane code">
+          <Tabs />
           {activeFile ? (
             <CodeViewer
               content={activeFile.content}
               language={activeFile.language}
-              highlight={highlight}
+              highlight={activeHighlight}
               path={activeFile.path}
-              onClose={closeFile}
             />
           ) : (
             <div className="empty" style={{ padding: 16 }}>
-              Source not bundled: {openPath}
+              {activePath ? `Source not bundled: ${activePath}` : 'No file open.'}
             </div>
           )}
         </div>

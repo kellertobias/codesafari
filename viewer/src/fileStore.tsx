@@ -1,11 +1,15 @@
 /**
- * App-wide "open file" state, shared by the left code surface and everything
- * that can reference a file (the tree, tour steps, and Markdown links).
+ * App-wide open-file state, shared by the left code surface and everything that
+ * can reference a file (the tree, tour steps, and Markdown links).
  *
- * The viewer is a two-region shell: the **left** is a code surface (a
- * togglable file tree plus a read-only code viewer) and the **right** is
- * whatever page or tour you're on. Opening a file only touches the left, so the
- * right keeps whatever is currently there.
+ * The viewer is a two-region shell: the **left** is a code surface (a togglable
+ * file tree plus a tabbed, read-only code viewer) and the **right** is whatever
+ * page or tour you're on. Opening a file only touches the left, so the right
+ * keeps whatever is currently there.
+ *
+ * Multiple files open as **tabs**; a newly opened file is appended to the right.
+ * A highlight belongs to the file it was opened for, so switching to another
+ * tab shows that file without a stray band, and switching back restores it.
  */
 
 import {
@@ -20,18 +24,23 @@ import type { LineRange, SourceFile } from '../../src/model/types';
 
 interface FileStore {
   files: SourceFile[];
-  /** Path of the file shown in the code surface, or null if none is open. */
-  openPath: string | null;
-  /** Range to highlight/scroll to, or null to show the file with no band. */
+  /** Open files, in tab order (left → right). */
+  tabs: string[];
+  /** The focused tab's path, or null when nothing is open. */
+  activePath: string | null;
+  /** The active highlight range (applies only to {@link highlightPath}). */
   highlight: LineRange | null;
-  /** Whether the file tree is expanded. */
+  /** The file the current highlight belongs to. */
+  highlightPath: string | null;
   treeOpen: boolean;
-  /** Open a file, optionally scrolling to a single line. */
+  /** Open/focus a file, optionally scrolling to a single line. */
   openFile: (path: string, line?: number) => void;
-  /** Open a file and highlight an explicit range (used by tour steps). */
+  /** Open/focus a file and highlight an explicit range (tour steps/details). */
   openRange: (path: string, range: LineRange | null) => void;
-  /** Close the code surface, giving the right side full width again. */
-  closeFile: () => void;
+  /** Focus an already-open tab without changing its highlight. */
+  activateTab: (path: string) => void;
+  /** Close a tab; focus a neighbour if it was active. */
+  closeTab: (path: string) => void;
   toggleTree: () => void;
 }
 
@@ -44,13 +53,18 @@ export function FileProvider({
   files: SourceFile[];
   children: ReactNode;
 }): JSX.Element {
-  const [openPath, setOpenPath] = useState<string | null>(null);
+  const [tabs, setTabs] = useState<string[]>([]);
+  const [activePath, setActivePath] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<LineRange | null>(null);
+  const [highlightPath, setHighlightPath] = useState<string | null>(null);
   const [treeOpen, setTreeOpen] = useState(false);
 
   const openRange = useCallback((path: string, range: LineRange | null) => {
-    setOpenPath(path);
+    // Append to the right if the file isn't already open.
+    setTabs((prev) => (prev.includes(path) ? prev : [...prev, path]));
+    setActivePath(path);
     setHighlight(range);
+    setHighlightPath(range ? path : null);
   }, []);
 
   const openFile = useCallback(
@@ -60,25 +74,54 @@ export function FileProvider({
     [openRange],
   );
 
-  const closeFile = useCallback(() => {
-    setOpenPath(null);
-    setHighlight(null);
-  }, []);
+  const activateTab = useCallback((path: string) => setActivePath(path), []);
+
+  const closeTab = useCallback(
+    (path: string) => {
+      setTabs((prev) => {
+        const idx = prev.indexOf(path);
+        if (idx === -1) return prev;
+        const next = prev.filter((p) => p !== path);
+        setActivePath((current) => {
+          if (current !== path) return current;
+          // Focus the tab that slid into this slot, else its left neighbour.
+          return next[idx] ?? next[idx - 1] ?? null;
+        });
+        return next;
+      });
+    },
+    [],
+  );
 
   const toggleTree = useCallback(() => setTreeOpen((v) => !v), []);
 
   const value = useMemo<FileStore>(
     () => ({
       files,
-      openPath,
+      tabs,
+      activePath,
       highlight,
+      highlightPath,
       treeOpen,
       openFile,
       openRange,
-      closeFile,
+      activateTab,
+      closeTab,
       toggleTree,
     }),
-    [files, openPath, highlight, treeOpen, openFile, openRange, closeFile, toggleTree],
+    [
+      files,
+      tabs,
+      activePath,
+      highlight,
+      highlightPath,
+      treeOpen,
+      openFile,
+      openRange,
+      activateTab,
+      closeTab,
+      toggleTree,
+    ],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

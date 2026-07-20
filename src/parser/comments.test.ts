@@ -55,6 +55,28 @@ describe('scanComments', () => {
     expect(comment.tourSlug).toBeUndefined();
   });
 
+  it('recognizes @tour:detail sub-steps', () => {
+    const src = [
+      '// @tour:detail Validate the port',
+      '// It must be a positive integer.',
+      'if (port <= 0) throw new Error();',
+    ].join('\n');
+    const [comment] = scanComments(src);
+    expect(comment.kind).toBe('detail');
+    expect(comment.title).toBe('Validate the port');
+    expect(comment.body).toBe('It must be a positive integer.');
+    expect(comment.tourSlug).toBeUndefined();
+    expect(comment.order).toBeUndefined();
+  });
+
+  it('does not confuse a step slug named detail with @tour:detail', () => {
+    const src = ['// @tour detail:1 A real step', 'const x = 1;'].join('\n');
+    const [comment] = scanComments(src);
+    expect(comment.kind).toBe('step');
+    expect(comment.tourSlug).toBe('detail');
+    expect(comment.order).toBe('1');
+  });
+
   it('ignores comments without a @tour header', () => {
     const src = ['// just a normal comment', 'const x = 1;'].join('\n');
     expect(scanComments(src)).toHaveLength(0);

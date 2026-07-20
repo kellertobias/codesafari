@@ -33,6 +33,26 @@ describe('buildManifest (integration, demo fixture)', () => {
     expect(enqueue.file).toBe('src/worker.ts');
   });
 
+  it('attaches @tour:detail sub-steps to their enclosing step', async () => {
+    const { manifest } = await buildManifest(demoRoot);
+    const tour = manifest.tours.find((t) => t.slug === 'onboarding')!;
+    const enqueue = tour.steps.find((s) => s.order === '12.2')!;
+    expect(enqueue.details).toHaveLength(1);
+    expect(enqueue.details[0].title).toBe('The run method');
+    expect(enqueue.details[0].anchor).toBe('method');
+    // The detail zooms to the run() method, inside the class range.
+    expect(enqueue.details[0].highlight.start).toBeGreaterThanOrEqual(
+      enqueue.highlight.start,
+    );
+    expect(enqueue.details[0].highlight.end).toBeLessThanOrEqual(
+      enqueue.highlight.end,
+    );
+
+    // A step without details has an empty array.
+    const drain = tour.steps.find((s) => s.order === '12.10')!;
+    expect(drain.details).toEqual([]);
+  });
+
   it('collects non-step callouts', async () => {
     const { manifest } = await buildManifest(demoRoot);
     expect(manifest.callouts).toHaveLength(1);

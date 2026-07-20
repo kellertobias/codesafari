@@ -82,6 +82,13 @@ function classifyAnchor(line: string): StepAnchorKind {
     return 'function';
   }
   if (FUNCTION_RE.test(trimmed) && /\(/.test(trimmed)) return 'function';
+  // A method/function definition: `name(params) {` with no control keyword.
+  if (
+    /^[A-Za-z_$][\w$]*\s*\([^;]*\)\s*\{\s*$/.test(trimmed) &&
+    !/\b(if|for|while|switch|catch)\b/.test(trimmed)
+  ) {
+    return 'method';
+  }
   if (/[:{]\s*$/.test(trimmed) || /\b(if|for|while|match|switch)\b/.test(trimmed)) {
     return 'block';
   }

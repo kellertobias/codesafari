@@ -106,6 +106,8 @@ export function CodeViewer({
   onClose,
 }: CodeViewerProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Tracks the last rendered path to decide scroll (same file) vs jump (new).
+  const lastPathRef = useRef<string | null>(null);
   // Store the tokens together with the content they were computed from, so a
   // pending re-tokenization never lets a new range annotate a stale file's
   // tokens (Code Hike dereferences out-of-range tokens and throws).
@@ -146,11 +148,35 @@ export function CodeViewer({
     };
   }, [ready, range, content]);
 
-  // Scroll the highlighted band into view whenever the range or file changes.
+  // Scroll to the target. Within the same file we glide (smooth scroll); when
+  // switching to a different file (or first paint) we jump. Gated on codeData so
+  // the first run with real tokens — not the "Highlighting…" placeholder —
+  // decides same-vs-different file.
   useEffect(() => {
-    if (!range || !scrollRef.current) return;
-    const start = scrollRef.current.querySelector('[data-cv-mark-start]');
-    start?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const scroller = scrollRef.current;
+    if (!scroller || !codeData) return; // wait for tokens to render
+    const sameFile = lastPathRef.current === path;
+    lastPathRef.current = path;
+    const behavior: ScrollBehavior = sameFile ? 'smooth' : 'auto';
+
+    if (!range) {
+      if (!sameFile) scroller.scrollTop = 0;
+      return;
+    }
+    // rAF so the freshly-rendered annotation is laid out before we measure.
+    const raf = requestAnimationFrame(() => {
+      const target = scroller.querySelector<HTMLElement>('[data-cv-mark-start]');
+      if (!target) return;
+      const sRect = scroller.getBoundingClientRect();
+      const tRect = target.getBoundingClientRect();
+      const top =
+        scroller.scrollTop +
+        (tRect.top - sRect.top) -
+        scroller.clientHeight / 2 +
+        tRect.height / 2;
+      scroller.scrollTo({ top: Math.max(0, top), behavior });
+    });
+    return () => cancelAnimationFrame(raf);
   }, [range, path, codeData]);
 
   return (

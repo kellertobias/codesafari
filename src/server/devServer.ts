@@ -172,15 +172,22 @@ async function serveStatic(
     return;
   }
 
+  // Never cache in dev, so a rebuilt viewer (new hashed asset names referenced
+  // by a fresh index.html) is always picked up on reload.
+  const noCache = { 'cache-control': 'no-store' };
+
   try {
     const data = await fs.readFile(target);
-    res.writeHead(200, { 'content-type': MIME[path.extname(target)] ?? 'application/octet-stream' });
+    res.writeHead(200, {
+      'content-type': MIME[path.extname(target)] ?? 'application/octet-stream',
+      ...noCache,
+    });
     res.end(data);
   } catch {
     // SPA fallback: serve index.html for unknown routes.
     try {
       const html = await fs.readFile(path.join(dir, 'index.html'));
-      res.writeHead(200, { 'content-type': MIME['.html'] });
+      res.writeHead(200, { 'content-type': MIME['.html'], ...noCache });
       res.end(html);
     } catch {
       res.writeHead(404);

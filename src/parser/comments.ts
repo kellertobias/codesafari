@@ -20,10 +20,10 @@
 import { isValidOrderKey } from './ordering.js';
 
 export interface RawTourComment {
-  kind: 'step' | 'callout';
-  /** For steps: the tour slug. Absent for callouts. */
+  kind: 'step' | 'callout' | 'detail';
+  /** For steps: the tour slug. Absent for callouts and details. */
   tourSlug?: string;
-  /** For steps: the dot-aware order key. Absent for callouts. */
+  /** For steps: the dot-aware order key. Absent for callouts and details. */
   order?: string;
   title: string;
   /** Markdown body assembled from the block's remaining lines. */
@@ -47,21 +47,30 @@ interface CommentBlock {
   nextCodeLine: number | null;
 }
 
-const HEADER_RE = /^@tour\s+(.+)$/;
+// Matches a header line: `@tour` followed by end-of-line, whitespace, or a
+// colon (the `@tour:detail` form). The rest of the line is the payload.
+const HEADER_RE = /^@tour(?=$|[\s:])(.*)$/;
 
-/** Parse a header line's payload into a step/callout descriptor, or null. */
+/** Parse a header line's payload into a step/callout/detail descriptor, or null. */
 function parseHeader(payload: string): Pick<
   RawTourComment,
   'kind' | 'tourSlug' | 'order' | 'title'
 > | null {
   const trimmed = payload.trim();
 
+  // `@tour:detail <title>` — a sub-step of the enclosing step.
+  const detailMatch = /^:detail\b\s*(.*)$/.exec(trimmed);
+  if (detailMatch) {
+    return { kind: 'detail', title: detailMatch[1].trim() };
+  }
+
+  // `@tour comment <title>` — a non-navigable callout.
   const calloutMatch = /^comment\b\s*(.*)$/.exec(trimmed);
   if (calloutMatch) {
     return { kind: 'callout', title: calloutMatch[1].trim() };
   }
 
-  // <tour-slug>:<order> <title>
+  // `@tour <tour-slug>:<order> <title>` — a navigable step.
   const stepMatch = /^([A-Za-z0-9._-]+):(\S+)\s*(.*)$/.exec(trimmed);
   if (stepMatch) {
     const [, tourSlug, order, title] = stepMatch;
