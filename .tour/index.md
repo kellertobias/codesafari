@@ -2,7 +2,7 @@
 title: CodeSafari, toured
 description: A guided tour of @tobisk/codesafari — the tool giving you this very tour.
 defaultSnippetLines: 18
-repositoryUrl: https://github.com/tobisk/codesafari
+repositoryUrl: https://github.com/kellertobias/codesafari
 ---
 
 Welcome — you're looking at **`@tobisk/codesafari` explaining itself**. The pages,

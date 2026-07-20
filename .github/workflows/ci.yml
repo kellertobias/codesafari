@@ -1,9 +1,13 @@
 name: CI
 
+# Validates every PR and non-main branch push. Pushes to main are handled by
+# release.yml, which runs the same checks before releasing — so main is excluded
+# here to avoid a redundant double run.
 on:
   push:
-    branches: [main]
+    branches-ignore: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   build-and-test:
