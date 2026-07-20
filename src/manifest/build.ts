@@ -25,7 +25,7 @@ import { MANIFEST_VERSION } from '../model/types.js';
 import { IgnoreMatcher } from '../ignore/ignore.js';
 import { collect, walk } from '../content/walk.js';
 import { loadContent } from '../content/loadContent.js';
-import { scanComments } from '../parser/comments.js';
+import { scanComments, type RawTourComment } from '../parser/comments.js';
 import {
   languageForPath,
   resolveTarget,
@@ -71,19 +71,75 @@ export async function buildManifest(
   const diagnostics: Diagnostic[] = [...content.diagnostics];
   const ignore = await IgnoreMatcher.load(root);
 
+  // 1. Seed one empty tour per authored tour file, keyed by slug.
   const tourBySlug = new Map<string, Tour>();
   for (const base of content.tours) {
     tourBySlug.set(base.slug, { ...base, steps: [] });
   }
 
-  const callouts: SourceCallout[] = [];
-  /** Every non-ignored source file, so the viewer's tree can browse them all. */
-  const allSourceFiles = new Set<string>();
-  /** `@tour:detail` sub-steps, assigned to their enclosing step after sorting. */
-  const pendingDetails: Array<{ file: string; detail: StepDetail }> = [];
-  const projectDefault = content.project.defaultSnippetLines;
+  // 2–3. Scan source comments: attach steps to tours, collect callouts + details.
+  const scan = await scanSources(
+    root,
+    ignore,
+    tourBySlug,
+    content.project.defaultSnippetLines,
+    diagnostics,
+  );
 
-  // 2–4. Scan source files for comments and resolve targets.
+  // 4. Nest each detail under its enclosing step, then sort/validate tours.
+  const tours = [...tourBySlug.values()];
+  assignDetails(scan.pendingDetails, tours, diagnostics);
+  finalizeTours(tours, diagnostics);
+
+  // 5. Validate cross-references.
+  validateReferences(content, tours, diagnostics);
+
+  // 6. Bundle source content when exporting.
+  const files = options.bundleSources
+    ? await bundleSources(root, scan.allSourceFiles, diagnostics)
+    : [];
+
+  const manifest: Manifest = {
+    version: MANIFEST_VERSION,
+    project: content.project,
+    components: content.components,
+    tours,
+    glossary: content.glossary,
+    callouts: scan.callouts,
+    examples: [],
+    files,
+    diagrams: [],
+  };
+
+  return { manifest, diagnostics };
+}
+
+interface ScanResult {
+  callouts: SourceCallout[];
+  /** `@tour:detail` sub-steps, assigned to their enclosing step after sorting. */
+  pendingDetails: Array<{ file: string; detail: StepDetail }>;
+  /** Every non-ignored source file, so the viewer's tree can browse them all. */
+  allSourceFiles: Set<string>;
+}
+
+/**
+ * Walk the non-ignored source files, scan each for `@tour` comments, and route
+ * every comment: steps are resolved and pushed onto their tour, callouts and
+ * details are collected for the caller to place.
+ */
+async function scanSources(
+  root: string,
+  ignore: IgnoreMatcher,
+  tourBySlug: Map<string, Tour>,
+  projectDefault: number,
+  diagnostics: Diagnostic[],
+): Promise<ScanResult> {
+  const result: ScanResult = {
+    callouts: [],
+    pendingDetails: [],
+    allSourceFiles: new Set<string>(),
+  };
+
   const sourceFiles = await collect(
     walk(root, {
       ignore,
@@ -93,108 +149,125 @@ export async function buildManifest(
 
   for (const abs of sourceFiles.sort()) {
     const relPath = rel(root, abs);
-    allSourceFiles.add(relPath);
-    let source: string;
-    try {
-      source = await fs.readFile(abs, 'utf8');
-    } catch (err) {
-      diagnostics.push({
-        severity: 'warning',
-        file: relPath,
-        message: `Cannot read source file: ${(err as Error).message}`,
-      });
-      continue;
-    }
+    result.allSourceFiles.add(relPath);
+
+    const source = await readSource(abs, relPath, diagnostics);
+    if (source === null) continue;
 
     const lines = source.split('\n');
-    const language: Language = languageForPath(relPath) as Language;
-    const comments = scanComments(source);
+    const language = languageForPath(relPath) as Language;
 
-    for (const comment of comments) {
+    for (const comment of scanComments(source)) {
       if (comment.kind === 'callout') {
-        callouts.push({
+        result.callouts.push({
           title: comment.title,
           body: comment.body,
           file: relPath,
           line: comment.startLine,
         });
-        continue;
-      }
-
-      if (comment.kind === 'detail') {
-        // Resolve the block this detail zooms to; assign to a step later.
-        const resolved = resolveTarget(
-          lines,
-          comment.nextCodeLine,
-          comment.startLine,
-          projectDefault,
-          language,
-        );
-        pendingDetails.push({
+      } else if (comment.kind === 'detail') {
+        result.pendingDetails.push({
           file: relPath,
-          detail: {
-            title: comment.title,
-            body: comment.body,
-            highlight: resolved.highlight,
-            commentLine: comment.startLine,
-            anchor: resolved.anchor,
-          },
+          detail: toDetail(comment, lines, language, projectDefault),
         });
-        continue;
+      } else {
+        attachStep(comment, relPath, lines, language, projectDefault, tourBySlug, diagnostics);
       }
-
-      const tour = tourBySlug.get(comment.tourSlug!);
-      if (!tour) {
-        diagnostics.push({
-          severity: 'error',
-          file: relPath,
-          line: comment.startLine,
-          message: `Step references unknown tour "${comment.tourSlug}".`,
-        });
-        continue;
-      }
-
-      const snippetLines = tour.defaultSnippetLines ?? projectDefault;
-      const { highlight, anchor } = resolveTarget(
-        lines,
-        comment.nextCodeLine,
-        comment.startLine,
-        snippetLines,
-        language,
-      );
-
-      const step: TourStep = {
-        tourSlug: tour.slug,
-        order: comment.order!,
-        title: comment.title,
-        body: comment.body,
-        file: relPath,
-        highlight,
-        commentLine: comment.startLine,
-        anchor,
-        details: [],
-      };
-      tour.steps.push(step);
     }
   }
 
-  assignDetails(pendingDetails, [...tourBySlug.values()], diagnostics);
+  return result;
+}
 
-  // Sort steps and detect duplicate order keys within a tour.
-  for (const tour of tourBySlug.values()) {
+/** Read a source file, recording a warning and returning null on failure. */
+async function readSource(
+  abs: string,
+  relPath: string,
+  diagnostics: Diagnostic[],
+): Promise<string | null> {
+  try {
+    return await fs.readFile(abs, 'utf8');
+  } catch (err) {
+    diagnostics.push({
+      severity: 'warning',
+      file: relPath,
+      message: `Cannot read source file: ${(err as Error).message}`,
+    });
+    return null;
+  }
+}
+
+/** Build a detail sub-step from its comment, resolving the block it zooms to. */
+function toDetail(
+  comment: RawTourComment,
+  lines: string[],
+  language: Language,
+  projectDefault: number,
+): StepDetail {
+  const resolved = resolveTarget(
+    lines,
+    comment.nextCodeLine,
+    comment.startLine,
+    projectDefault,
+    language,
+  );
+  return {
+    title: comment.title,
+    body: comment.body,
+    highlight: resolved.highlight,
+    commentLine: comment.startLine,
+    anchor: resolved.anchor,
+  };
+}
+
+/** Resolve a step comment's highlight range and push it onto its tour. */
+function attachStep(
+  comment: RawTourComment,
+  relPath: string,
+  lines: string[],
+  language: Language,
+  projectDefault: number,
+  tourBySlug: Map<string, Tour>,
+  diagnostics: Diagnostic[],
+): void {
+  const tour = tourBySlug.get(comment.tourSlug!);
+  if (!tour) {
+    diagnostics.push({
+      severity: 'error',
+      file: relPath,
+      line: comment.startLine,
+      message: `Step references unknown tour "${comment.tourSlug}".`,
+    });
+    return;
+  }
+
+  const snippetLines = tour.defaultSnippetLines ?? projectDefault;
+  const { highlight, anchor } = resolveTarget(
+    lines,
+    comment.nextCodeLine,
+    comment.startLine,
+    snippetLines,
+    language,
+  );
+
+  tour.steps.push({
+    tourSlug: tour.slug,
+    order: comment.order!,
+    title: comment.title,
+    body: comment.body,
+    file: relPath,
+    highlight,
+    commentLine: comment.startLine,
+    anchor,
+    details: [],
+  });
+}
+
+/** Sort each tour's steps, warn on duplicate order keys, and flag empty tours. */
+function finalizeTours(tours: Tour[], diagnostics: Diagnostic[]): void {
+  for (const tour of tours) {
     tour.steps = sortByOrder(tour.steps, (s) => s.order);
-    const seen = new Map<string, TourStep>();
-    for (const step of tour.steps) {
-      if (seen.has(step.order)) {
-        diagnostics.push({
-          severity: 'warning',
-          file: step.file,
-          line: step.commentLine,
-          message: `Duplicate step order "${step.order}" in tour "${tour.slug}".`,
-        });
-      }
-      seen.set(step.order, step);
-    }
+    warnDuplicateOrders(tour, diagnostics);
     if (tour.steps.length === 0) {
       diagnostics.push({
         severity: 'warning',
@@ -203,31 +276,22 @@ export async function buildManifest(
       });
     }
   }
+}
 
-  const tours = [...tourBySlug.values()];
-
-  // 5. Validate cross-references.
-  validateReferences(content, tours, diagnostics);
-
-  // 6. Bundle source content when exporting.
-  let files: SourceFile[] = [];
-  if (options.bundleSources) {
-    files = await bundleSources(root, allSourceFiles, diagnostics);
+/** Warn once per step whose order key duplicates an earlier step in the tour. */
+function warnDuplicateOrders(tour: Tour, diagnostics: Diagnostic[]): void {
+  const seen = new Set<string>();
+  for (const step of tour.steps) {
+    if (seen.has(step.order)) {
+      diagnostics.push({
+        severity: 'warning',
+        file: step.file,
+        line: step.commentLine,
+        message: `Duplicate step order "${step.order}" in tour "${tour.slug}".`,
+      });
+    }
+    seen.add(step.order);
   }
-
-  const manifest: Manifest = {
-    version: MANIFEST_VERSION,
-    project: content.project,
-    components: content.components,
-    tours,
-    glossary: content.glossary,
-    callouts,
-    examples: [],
-    files,
-    diagrams: [],
-  };
-
-  return { manifest, diagnostics };
 }
 
 /**

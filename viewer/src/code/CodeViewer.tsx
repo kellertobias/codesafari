@@ -112,6 +112,33 @@ function buildHandlers(
   return [handler];
 }
 
+/**
+ * Compute the scrollTop that best frames the focused block (the `data-cv-focus`
+ * lines) within the scroller: centered when it fits, or with its start near the
+ * top when it's taller than the viewport. Returns null when nothing is focused.
+ */
+function focusScrollTop(scroller: HTMLElement): number | null {
+  const hits = scroller.querySelectorAll<HTMLElement>('[data-cv-focus]');
+  if (hits.length === 0) return null;
+
+  const scrollerTop = scroller.getBoundingClientRect().top;
+  // Content-absolute top/bottom of the highlighted block.
+  const blockTop =
+    hits[0].getBoundingClientRect().top - scrollerTop + scroller.scrollTop;
+  const blockBottom =
+    hits[hits.length - 1].getBoundingClientRect().bottom -
+    scrollerTop +
+    scroller.scrollTop;
+  const blockHeight = blockBottom - blockTop;
+  const viewHeight = scroller.clientHeight;
+
+  const top =
+    blockHeight <= viewHeight
+      ? blockTop - (viewHeight - blockHeight) / 2 // fits: center it
+      : blockTop - Math.min(viewHeight * 0.1, 40); // taller: start near top
+  return Math.max(0, top);
+}
+
 // @tour viewer:4 Rendering code with Code Hike
 // The end of the line — the component drawing this very pane. It calls Code
 // Hike's async `highlight()` on the full file, injects a `mark` block annotation
@@ -172,7 +199,6 @@ export function CodeViewer({
     if (!scroller || !codeData) return; // wait for tokens to render
     const sameFile = lastPathRef.current === path;
     lastPathRef.current = path;
-    const behavior: ScrollBehavior = sameFile ? 'smooth' : 'auto';
 
     if (!range) {
       if (!sameFile) scroller.scrollTop = 0;
@@ -180,28 +206,9 @@ export function CodeViewer({
     }
     // rAF so the freshly-rendered lines are laid out before we measure.
     const raf = requestAnimationFrame(() => {
-      const hits = scroller.querySelectorAll<HTMLElement>('[data-cv-focus]');
-      if (hits.length === 0) return;
-      const sTop = scroller.getBoundingClientRect().top;
-      // Content-absolute top/bottom of the highlighted block.
-      const blockTop =
-        hits[0].getBoundingClientRect().top - sTop + scroller.scrollTop;
-      const blockBottom =
-        hits[hits.length - 1].getBoundingClientRect().bottom -
-        sTop +
-        scroller.scrollTop;
-      const blockHeight = blockBottom - blockTop;
-      const viewHeight = scroller.clientHeight;
-
-      let top: number;
-      if (blockHeight <= viewHeight) {
-        // The whole block fits: center it so all of it is on screen.
-        top = blockTop - (viewHeight - blockHeight) / 2;
-      } else {
-        // Taller than the viewport: show the start near the top.
-        top = blockTop - Math.min(viewHeight * 0.1, 40);
-      }
-      scroller.scrollTo({ top: Math.max(0, top), behavior });
+      const top = focusScrollTop(scroller);
+      if (top === null) return;
+      scroller.scrollTo({ top, behavior: sameFile ? 'smooth' : 'auto' });
     });
     return () => cancelAnimationFrame(raf);
   }, [range, context, path, codeData]);
