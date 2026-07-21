@@ -301,6 +301,88 @@ wraps it in dark-mode Safari chrome with the vendored
 `docs/viewer-explorer.safari.png` — the image shown at the top of this README.
 The framing step needs macOS; on other platforms the raw capture is still written.
 
+## Releasing
+
+Releases use **split ownership**: **Forgejo** (`origin`, the source of truth) owns
+versioning, and **GitHub** (a push mirror) publishes to npm.
+
+### Conventional Commits → version
+
+Versions are computed automatically from
+[Conventional Commit](https://www.conventionalcommits.org/) messages since the last
+`vX.Y.Z` tag:
+
+| Commit                                        | Bump  |
+| --------------------------------------------- | ----- |
+| `fix:` / `perf:`                              | patch |
+| `feat:`                                       | minor |
+| `!` after type/scope, or `BREAKING CHANGE:`   | major |
+| `docs:`, `chore:`, `refactor:`, `test:`, …    | none  |
+
+Tags are formatted `vX.Y.Z`. The first automated release starts at **1.0.0** (create
+a `v0.1.0` tag manually first if you want to keep releasing in the `0.x` range).
+
+### The split, step by step
+
+1. You push Conventional Commits to `main` on Forgejo.
+2. Forgejo CI (`.forgejo/workflows/ci.yml`) runs the build/test job, then a `release`
+   job (default-branch only, serialized) runs `semantic-release`. It bumps the
+   version files + `CHANGELOG.md`, commits `chore(release): vX.Y.Z`, and pushes a
+   `vX.Y.Z` tag. **Forgejo creates the tag only** — it does not publish to npm and
+   does not create a hosted Forgejo release.
+3. The commit and tag mirror to GitHub. The `v*` tag triggers
+   `.github/workflows/release.yml`, which checks out the tag, builds, publishes to
+   npm, and creates a GitHub Release.
+
+The version published to npm is whatever `package.json` holds at the tag — already
+bumped by Forgejo — so GitHub runs no version logic.
+
+### Why the release commit has no `[skip ci]`
+
+`semantic-release` is intentionally configured to write a **marker-free** release
+commit message. The `v*` tag points at that commit and mirrors to GitHub; a
+`[skip ci]` / `[ci skip]` marker would travel with it and silently skip the mirrored
+npm publish. Loop prevention instead comes from **git tags**: `semantic-release`
+derives the next version from the last `vX.Y.Z` tag, so when the release commit
+re-triggers Forgejo CI, the run finds zero commits since the fresh tag and exits as a
+harmless no-op. One no-op Forgejo run per release is expected.
+
+### Authoritative version surfaces
+
+`package.json` and `package-lock.json` (both the top-level `version` and
+`packages[""].version`). `semantic-release` keeps them in sync; `CHANGELOG.md` is
+regenerated. There are no workspaces.
+
+### npm publish uses OIDC — no token
+
+GitHub publishes with **npm trusted publishing (OIDC)**: no `NPM_TOKEN` /
+`NODE_AUTH_TOKEN` exists anywhere. The `release.yml` job has `id-token: write`; npm
+exchanges the GitHub OIDC identity for a short-lived credential and attaches build
+provenance automatically.
+
+**One-time manual setup (cannot be done from code):**
+
+- **npm:** on npmjs.com, configure the package's **Trusted Publisher → GitHub
+  Actions**, pointing at the GitHub mirror `owner/repo` (e.g. `kellertobias/codesafari`)
+  and the exact workflow filename **`release.yml`**. Trusted publishing needs the
+  package to already exist, so a brand-new package may need one manual initial
+  `npm publish` before OIDC can take over. A public package is required for automatic
+  provenance.
+- **Forgejo:** create the **`SEMANTIC_RELEASE_TOKEN`** secret — a token that can push
+  the release commit to the protected `main` branch and push tags. The `release` job
+  fails fast with a clear error if it is empty.
+
+### Dry-run preview (safe, no tag)
+
+Preview the next version and notes without creating a tag or publishing:
+
+```bash
+npx semantic-release --dry-run --no-ci
+```
+
+Run it against full history (`fetch-depth: 0`). It reports the proposed version and
+release notes and makes no changes.
+
 ## License
 
 MIT © CodeSafari contributors

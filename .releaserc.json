@@ -1,11 +1,13 @@
 {
-  "repositoryUrl": "https://github.com/kellertobias/codesafari.git",
+  "repositoryUrl": "https://git.tokenet.de/opensource/codesafari.git",
   "branches": ["main"],
+  "tagFormat": "v${version}",
   "plugins": [
     [
       "@semantic-release/commit-analyzer",
       {
-        "preset": "conventionalcommits"
+        "preset": "conventionalcommits",
+        "releaseRules": [{ "type": "perf", "release": "patch" }]
       }
     ],
     [
@@ -20,19 +22,17 @@
         "changelogFile": "CHANGELOG.md"
       }
     ],
-    "@semantic-release/npm",
     [
-      "@semantic-release/github",
+      "@semantic-release/npm",
       {
-        "successComment": false,
-        "failComment": false
+        "npmPublish": false
       }
     ],
     [
       "@semantic-release/git",
       {
-        "assets": ["CHANGELOG.md", "package.json", "package-lock.json"],
-        "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+        "assets": ["package.json", "package-lock.json", "CHANGELOG.md"],
+        "message": "chore(release): v${nextRelease.version}\n\n${nextRelease.notes}"
       }
     ]
   ]

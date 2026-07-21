@@ -1,59 +1,74 @@
 name: Release
 
-# Publishes releases to GitHub (release + changelog) and npm using
-# semantic-release. Runs from the repository root so @semantic-release/npm can
-# find package.json. semantic-release derives the version from the Conventional
-# Commits since the last release; the release commit it pushes is tagged
-# [skip ci] so this workflow does not re-trigger itself.
+# GitHub is a push mirror of the Forgejo source of truth. Forgejo owns
+# versioning: it runs semantic-release, bumps package.json / lockfile /
+# CHANGELOG, commits `chore(release): vX.Y.Z`, and pushes a `vX.Y.Z` tag. That
+# commit + tag mirror here, and THIS workflow — triggered by the `v*` tag —
+# checks out the tag, builds the package, and publishes it to npm using OIDC
+# trusted publishing (the GitHub Actions <-> npm trust relationship). No npm
+# token is used anywhere; npm exchanges the GitHub OIDC identity for a
+# short-lived credential and attaches build provenance automatically. It then
+# creates a GitHub Release from the tag.
+#
+# The published version is whatever package.json holds at the tag — already
+# bumped by Forgejo — so there is no version logic here and semantic-release
+# does not run on GitHub.
 
 on:
   push:
-    branches: [main]
+    tags:
+      - "v*"
   workflow_dispatch:
 
 permissions:
-  contents: write # create the GitHub release and push the release commit
-  issues: write # comment on released issues
-  pull-requests: write # comment on released PRs
-  id-token: write # OIDC for npm provenance
+  id-token: write # OIDC: mint the trusted-publishing credential for npm
+  contents: write # create the GitHub Release from the tag
 
 jobs:
-  release:
-    name: Semantic Release
-    # GitHub-only (npm provenance + GitHub release). The Forgejo origin also
-    # reads .github/workflows, so guard against it running there.
+  publish:
+    name: Publish to npm (OIDC)
+    # GitHub-only. The Forgejo origin also reads .github/workflows and creates
+    # the `v*` tag, so guard against this running there.
     if: ${{ github.server_url == 'https://github.com' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout tag
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # full history so semantic-release can analyze commits
 
-      # No registry-url here: @semantic-release/npm configures the registry and
-      # auth itself from NPM_TOKEN, and a setup-node .npmrc would shadow it.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+          registry-url: "https://registry.npmjs.org"
+
+      # Trusted publishing (OIDC) requires a recent npm CLI. Pin to the latest
+      # so the runner's bundled npm can't be too old to exchange the token.
+      - name: Upgrade npm (OIDC trusted publishing support)
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify (typecheck, test, build)
-        run: |
-          npm run typecheck
-          npx tsc -p viewer/tsconfig.json
-          npm test
-          npm run build
+      - name: Build core + viewer
+        run: npm run build
 
-      # semantic-release owns the whole release: version from the commits, tag,
-      # GitHub release + changelog, and the npm publish (@semantic-release/npm,
-      # with provenance via publishConfig). It publishes only when there is a
-      # releasable commit, always at the version it just computed.
-      - name: Run semantic-release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npx semantic-release
+      # No NODE_AUTH_TOKEN / NPM_TOKEN in the environment: npm detects the GitHub
+      # OIDC environment, exchanges it for a short-lived credential, and attaches
+      # provenance. `--access public` because @tobisk/codesafari is a scoped,
+      # public package.
+      - name: Publish to npm
+        run: npm publish --access public
+
+      # Tag is `vX.Y.Z`; the npm version path uses `X.Y.Z`.
+      - name: Derive npm version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # Idempotent on re-runs: updates an existing release for the tag rather
+      # than failing.
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          body: |
+            Published to npm: https://www.npmjs.com/package/@tobisk/codesafari/v/${{ steps.ver.outputs.version }}
