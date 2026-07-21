@@ -60,6 +60,17 @@ export function Landing({ manifest }: { manifest: Manifest }): JSX.Element {
           </p>
         </>
       )}
+
+      <p className="landing-credit">
+        Generated with{' '}
+        <a
+          href="https://www.tobisk.de/software/codesafari"
+          target="_blank"
+          rel="noreferrer"
+        >
+          code:safari
+        </a>
+      </p>
     </div>
   );
 }

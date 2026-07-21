@@ -757,3 +757,10 @@ button {
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+.landing-credit {
+  margin-top: 3rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--fg-dim);
+}
