@@ -56,6 +56,7 @@ All authored content lives under `.tour/`. Markdown files use YAML frontmatter.
   components/*.md          # software components
   tours/**/*.md            # tour entry pages
   glossary/**/*.md         # glossary concepts (one or many per file)
+  docs/**/*.md             # standalone documentation pages (folders = structure)
   examples/**/*.md         # (v1.5) small self-contained code walkthroughs
 ```
 
@@ -106,6 +107,45 @@ One file may define many concepts using headings. Link to a concept from anywher
 ```markdown
 See the [Queue worker](glossary:queue-worker) for details.
 ```
+
+### Docs — `.tour/docs/**/*.md`
+
+Standalone documentation pages for concepts that need more room than a glossary
+entry and don't belong to any one tour. Drop in a Markdown file and it becomes a
+page — no frontmatter or registration required.
+
+**Folders are the navigation structure**, recursively. A folder's `index.md`
+becomes that folder's own page, so a section can have prose as well as children;
+a folder without one is a pure grouping node labelled from its name.
+
+```
+.tour/docs/
+  index.md                 # the Docs landing page
+  architecture/
+    index.md               # the "Architecture" section's own page
+    event-loop.md          # nested beneath it
+  deployment.md            # a top-level page
+```
+
+Frontmatter is optional:
+
+| Field | Effect |
+| --- | --- |
+| `title` | Page heading. Defaults to the leading `# Heading`, then the humanized file name. |
+| `navTitle` | Shorter label for the navigation tree only. Defaults to `title`. |
+| `order` | Sort key among siblings. Unordered pages sort last, alphabetically. |
+
+A page's slug is its path under `.tour/docs/` without the extension. Link to one
+from any Markdown in the project — a tour step, a component page, a glossary
+concept, or another doc — with the `doc:` scheme:
+
+```markdown
+See [the event loop](doc:architecture/event-loop) for the full story.
+```
+
+Broken `doc:` links are reported by `codesafari validate`, just like broken
+`glossary:` links. In the viewer, docs get their own navigation tree in the left
+sidebar, under a book icon beneath the file-explorer icon.
 
 ## Inline tour comments
 

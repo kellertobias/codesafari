@@ -7,6 +7,8 @@ the only contract between the CLI and the React viewer. Its shape lives in
 [`src/model/types.ts`](src/model/types.ts) and carries no Node or DOM
 dependencies so both sides can share it.
 
+For the long-form version, see [authoring documentation](doc:authoring).
+
 ## Dot-aware ordering
 
 Step order keys like `12.34` are **not** decimal numbers — each dot-separated

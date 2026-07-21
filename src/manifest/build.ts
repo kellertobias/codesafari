@@ -107,6 +107,7 @@ export async function buildManifest(
     components: content.components,
     tours,
     glossary: content.glossary,
+    docs: content.docs,
     callouts: scan.callouts,
     examples: [],
     files,
@@ -370,9 +371,9 @@ function assignDetails(
 
 // @tour pipeline:4 Checking cross-references
 // With steps attached, the builder verifies the graph holds together: tours
-// reference real components, and every `glossary:<slug>` link across all
-// Markdown bodies resolves to a defined concept. Broken links become warnings,
-// which is exactly what `validate` surfaces.
+// reference real components, and every `glossary:<slug>` and `doc:<slug>` link
+// across all Markdown bodies resolves to something defined. Broken links become
+// warnings, which is exactly what `validate` surfaces.
 function validateReferences(
   content: Awaited<ReturnType<typeof loadContent>>,
   tours: Tour[],
@@ -380,6 +381,7 @@ function validateReferences(
 ): void {
   const componentSlugs = new Set(content.components.map((c) => c.slug));
   const glossarySlugs = new Set(content.glossary.map((g) => g.slug));
+  const docSlugs = new Set(content.docs.map((d) => d.slug));
 
   for (const tour of tours) {
     for (const comp of tour.components) {
@@ -393,26 +395,34 @@ function validateReferences(
     }
   }
 
-  // Check `glossary:<slug>` links across all Markdown bodies.
+  // Check `glossary:<slug>` and `doc:<slug>` links across all Markdown bodies.
   const bodies: Array<{ text: string; file: string }> = [
     { text: content.project.body, file: '.tour/index.md' },
     ...content.components.map((c) => ({ text: c.body, file: c.sourcePath })),
     ...content.glossary.map((g) => ({ text: g.body, file: g.sourcePath })),
+    ...content.docs.map((d) => ({ text: d.body, file: d.sourcePath })),
     ...tours.flatMap((t) => [
       { text: t.body, file: t.sourcePath },
       ...t.steps.map((s) => ({ text: s.body, file: s.file })),
     ]),
   ];
 
-  const linkRe = /\]\(glossary:([A-Za-z0-9._-]+)\)/g;
+  // Doc slugs are paths, so their character class allows `/`.
+  const schemes = [
+    { name: 'glossary', re: /\]\(glossary:([A-Za-z0-9._-]+)\)/g, known: glossarySlugs },
+    { name: 'doc', re: /\]\(doc:([A-Za-z0-9._/-]+)\)/g, known: docSlugs },
+  ];
+
   for (const { text, file } of bodies) {
-    for (const match of text.matchAll(linkRe)) {
-      if (!glossarySlugs.has(match[1])) {
-        diagnostics.push({
-          severity: 'warning',
-          file,
-          message: `Broken glossary link "glossary:${match[1]}".`,
-        });
+    for (const { name, re, known } of schemes) {
+      for (const match of text.matchAll(re)) {
+        if (!known.has(match[1])) {
+          diagnostics.push({
+            severity: 'warning',
+            file,
+            message: `Broken ${name} link "${name}:${match[1]}".`,
+          });
+        }
       }
     }
   }

@@ -85,4 +85,39 @@ describe('buildManifest (integration, demo fixture)', () => {
     const { diagnostics } = await buildManifest(demoRoot);
     expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
   });
+
+  it('derives doc slugs from the folder structure', async () => {
+    const { manifest } = await buildManifest(demoRoot);
+    expect(manifest.docs.map((d) => d.slug)).toEqual([
+      // `index.md` takes its directory's slug, so a folder can have a page.
+      'architecture',
+      'architecture/internals/scheduler',
+      'architecture/retries',
+      'deployment',
+    ]);
+  });
+
+  it('resolves doc titles from frontmatter, heading, then file name', async () => {
+    const { manifest } = await buildManifest(demoRoot);
+    const bySlug = new Map(manifest.docs.map((d) => [d.slug, d]));
+
+    // Frontmatter `title` wins.
+    expect(bySlug.get('architecture/retries')!.title).toBe('Retry semantics');
+    // Else the leading `# Heading` — which is then stripped from the body so
+    // the page doesn't render its title twice.
+    const section = bySlug.get('architecture')!;
+    expect(section.title).toBe('How the demo is put together');
+    expect(section.body.startsWith('#')).toBe(false);
+    // `navTitle` overrides the label in the navigation tree only.
+    expect(section.navTitle).toBe('Architecture');
+    expect(section.order).toBe(1);
+    // Else the humanized file name.
+    expect(bySlug.get('deployment')!.title).toBe('Deployment');
+  });
+
+  it('validates doc: links like glossary: links', async () => {
+    const { diagnostics } = await buildManifest(demoRoot);
+    // The fixture's `doc:architecture/retries` link resolves.
+    expect(diagnostics.filter((d) => d.message.includes('doc link'))).toEqual([]);
+  });
 });

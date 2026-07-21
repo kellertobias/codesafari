@@ -52,7 +52,7 @@ function printSummary(
   console.log(
     `  ${manifest.components.length} component(s), ${manifest.tours.length} tour(s), ` +
       `${stepCount} step(s), ${manifest.glossary.length} glossary concept(s), ` +
-      `${manifest.callouts.length} callout(s).`,
+      `${manifest.docs.length} doc page(s), ${manifest.callouts.length} callout(s).`,
   );
 
   for (const d of diagnostics) {

@@ -1,8 +1,8 @@
 /**
- * Render authored Markdown: prose, inline code, links, images, `glossary:`
- * links (rewritten to in-app routes), file references (opened in the left code
- * surface), and fenced ```mermaid``` diagrams (rendered client-side with the
- * bundled Mermaid — no network).
+ * Render authored Markdown: prose, inline code, links, images, `glossary:` and
+ * `doc:` links (rewritten to in-app routes), file references (opened in the
+ * left code surface), and fenced ```mermaid``` diagrams (rendered client-side
+ * with the bundled Mermaid — no network).
  */
 
 import { useEffect, useRef } from 'react';
@@ -42,6 +42,13 @@ function renderMarkdown(source: string): string {
     if (href.startsWith('glossary:')) {
       const slug = href.slice('glossary:'.length);
       return `<a href="#" class="glossary-link" data-glossary="${escapeAttr(slug)}"${titleAttr}>${text}</a>`;
+    }
+
+    // Documentation page → an in-app route. A plain anchor is enough: the
+    // hash router picks it up, so back/forward and middle-click all work.
+    if (href.startsWith('doc:')) {
+      const slug = href.slice('doc:'.length).replace(/^\/+/, '');
+      return `<a href="#/doc/${escapeAttr(slug)}" class="doc-link"${titleAttr}>${text}</a>`;
     }
 
     // External or in-app hash links → normal anchors.

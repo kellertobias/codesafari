@@ -38,9 +38,9 @@ the top of `.tour/index.md` as a short "Assumptions" note and continue.
 
 ---
 
-## 1. The three content kinds — keep them distinct
+## 1. The four content kinds — keep them distinct
 
-CodeSafari has three kinds of authored content. Newcomers to the format blur
+CodeSafari has four kinds of authored content. Newcomers to the format blur
 them; don't.
 
 | Kind | Answers | Shape | Lives in |
@@ -48,6 +48,7 @@ them; don't.
 | **Glossary concept** | "What does this *word* mean?" | A paragraph or two. No navigation. | `.tour/glossary/**/*.md` |
 | **Component** | "What is this *part of the system* and where does it live?" | A static page with links into the code. | `.tour/components/*.md` |
 | **Tour (CodeSafari)** | "How does this *flow* actually work, step by step?" | An intro page + ordered `@tour` steps in the source. | `.tour/tours/**/*.md` + `@tour` comments |
+| **Doc page** | "Explain this *idea* properly, at length." | Long-form prose, nested in folders. Not anchored to code. | `.tour/docs/**/*.md` |
 
 Decision rule when you are unsure which one a piece of writing is:
 
@@ -58,10 +59,15 @@ Decision rule when you are unsure which one a piece of writing is:
   reader will return to → **component**.
 - If it describes a *journey through time* — a request, a login, a job being
   processed → **tour**.
+- If it needs *more than a couple of paragraphs* and isn't tied to specific
+  lines of code — a design rationale, a protocol, a threat model, a migration
+  history → **doc page**. Signal: a glossary entry that keeps growing headings.
 
 A concept is never a tour. "JWT" is a glossary entry; "How a login request
 becomes a session" is a tour. A component is never a tour either: "Auth
-service" is a component; the login flow *through* it is the tour.
+service" is a component; the login flow *through* it is the tour. And a doc page
+is never a tour: "Why we chose opaque tokens over JWTs" is a doc; the code path
+that mints one is a tour.
 
 ---
 
@@ -339,6 +345,39 @@ Write an entry for any term that is **domain-specific, internally invented, or
 used in a non-standard way**. Skip industry-standard terms unless this codebase
 means something unusual by them.
 
+When an entry outgrows two paragraphs, move the body to a doc page and leave the
+glossary entry as a one-line definition plus a `doc:` link.
+
+---
+
+## 6b. Doc pages
+
+For prose that needs room: design rationale, protocols, threat models, "how our
+caching actually works". Drop a Markdown file under `.tour/docs/` — no
+frontmatter required. **Folders are the navigation structure**, recursively, and
+a folder's `index.md` is that folder's own page.
+
+```
+.tour/docs/
+  index.md               # Docs landing page
+  caching/
+    index.md             # the "Caching" section page
+    invalidation.md      # nested beneath it
+```
+
+Optional frontmatter: `title` (defaults to the leading `# Heading`, then the
+file name), `navTitle` (shorter tree label), `order` (sort among siblings).
+
+Link from anywhere — a step body, a component, a glossary entry, another doc —
+with the `doc:` scheme, using the path under `.tour/docs/` without the extension:
+
+```markdown
+See [cache invalidation](doc:caching/invalidation).
+```
+
+Keep doc pages out of step bodies' critical path: a step should stand alone and
+*offer* the doc as a deeper read, not require it.
+
 ---
 
 ## 7. Verify before you report done
@@ -351,7 +390,7 @@ npx @tobisk/codesafari dev         # optional: view it at http://localhost:4317
 `validate` must pass with zero errors. Then check by hand:
 
 - Every `slug` referenced in a tour's `components:` exists.
-- Every `glossary:` link resolves.
+- Every `glossary:` and `doc:` link resolves.
 - Every file path linked from Markdown exists.
 - Every tour has a step `1`-equivalent and reads in order.
 - No tour references a file excluded by `.gitignore` / `.codesafariignore`.

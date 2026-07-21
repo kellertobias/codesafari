@@ -12,6 +12,7 @@ import path from 'node:path';
 import type {
   Component,
   Diagnostic,
+  Doc,
   GlossaryConcept,
   ProjectMeta,
   Tour,
@@ -33,6 +34,7 @@ export interface LoadedContent {
   components: Component[];
   tours: Omit<Tour, 'steps'>[];
   glossary: GlossaryConcept[];
+  docs: Doc[];
   diagnostics: Diagnostic[];
 }
 
@@ -53,8 +55,9 @@ export async function loadContent(root: string): Promise<LoadedContent> {
   const components = await loadComponents(tourDir, root, diagnostics);
   const tours = await loadTours(tourDir, root, diagnostics);
   const glossary = await loadGlossary(tourDir, root, diagnostics);
+  const docs = await loadDocs(tourDir, root, diagnostics);
 
-  return { project, components, tours, glossary, diagnostics };
+  return { project, components, tours, glossary, docs, diagnostics };
 }
 
 async function loadProject(
@@ -192,6 +195,102 @@ async function loadGlossary(
   }
 
   return concepts;
+}
+
+/**
+ * Load the standalone documentation tree under `.tour/docs`.
+ *
+ * Unlike components and tours, docs carry no required frontmatter: the folder
+ * layout supplies the slug and the navigation structure, and the title falls
+ * back to the leading `# Heading` and then the file name. That keeps a doc a
+ * plain Markdown file you can drop anywhere in the tree.
+ */
+async function loadDocs(
+  tourDir: string,
+  root: string,
+  diagnostics: Diagnostic[],
+): Promise<Doc[]> {
+  const dir = path.join(tourDir, 'docs');
+  const files = await collect(walk(dir, { filter: (p) => p.endsWith('.md') }));
+  const docs: Doc[] = [];
+  // Slug → the file that claimed it, so collisions name both sides.
+  const claimed = new Map<string, string>();
+
+  for (const file of files.sort()) {
+    const sourcePath = rel(root, file);
+    try {
+      const { data, body } = parseFrontmatter(await fs.readFile(file, 'utf8'));
+      const slug = docSlug(path.relative(dir, file));
+
+      const prior = claimed.get(slug);
+      if (prior) {
+        diagnostics.push({
+          severity: 'error',
+          file: sourcePath,
+          message: `Doc slug "${slug}" is already defined by ${prior}.`,
+        });
+        continue;
+      }
+      claimed.set(slug, sourcePath);
+
+      const heading = splitLeadingHeading(body);
+      docs.push({
+        slug,
+        title:
+          optionalString(data, 'title') ??
+          heading.title ??
+          humanize(slug.split('/').pop() ?? slug),
+        navTitle: optionalString(data, 'navTitle'),
+        order: optionalNumber(data, 'order'),
+        body: heading.body,
+        sourcePath,
+      });
+    } catch (err) {
+      diagnostics.push({
+        severity: 'error',
+        file: sourcePath,
+        message: (err as Error).message,
+      });
+    }
+  }
+
+  return docs.sort((a, b) => a.slug.localeCompare(b.slug));
+}
+
+/**
+ * Derive a doc slug from its path relative to `.tour/docs`: drop the `.md`
+ * extension, and let an `index.md` stand for its directory so a folder can have
+ * its own landing page. The docs root `index.md` keeps the literal slug
+ * `index`, since an empty slug isn't addressable.
+ */
+export function docSlug(relFile: string): string {
+  const withoutExt = relFile
+    .split(path.sep)
+    .join('/')
+    .replace(/\.md$/i, '');
+  const collapsed = withoutExt.replace(/(^|\/)index$/i, '');
+  return collapsed || 'index';
+}
+
+/**
+ * Split off a leading `# Heading` so it can become the doc title without the
+ * page rendering the same heading twice. Only a heading before any other
+ * content counts; a `#` further down is part of the body.
+ */
+function splitLeadingHeading(body: string): { title?: string; body: string } {
+  const lines = body.split('\n');
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === '') i++;
+
+  const heading = /^#\s+(.+)$/.exec(lines[i] ?? '');
+  if (!heading) return { body };
+  return { title: heading[1].trim(), body: lines.slice(i + 1).join('\n').trim() };
+}
+
+/** Turn a `kebab-case` path segment into a readable fallback title. */
+function humanize(segment: string): string {
+  const words = segment.replace(/[-_]+/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 /** Split a glossary Markdown body into concepts keyed by `## Heading`. */

@@ -22,6 +22,13 @@ import {
 } from 'react';
 import type { LineRange, SourceFile } from '../../src/model/types';
 
+/**
+ * The sidebar shows one pane at a time, selected from the activity bar:
+ * `files` browses the repository's source, `docs` browses the authored
+ * documentation tree from `.tour/docs`.
+ */
+export type SidePanel = 'files' | 'docs';
+
 interface FileStore {
   files: SourceFile[];
   /** Open files, in tab order (left → right). */
@@ -37,7 +44,8 @@ interface FileStore {
   context: LineRange | null;
   /** The file the current highlight/context belongs to. */
   highlightPath: string | null;
-  treeOpen: boolean;
+  /** Which sidebar pane is showing, or null when the sidebar is collapsed. */
+  panel: SidePanel | null;
   /** Open/focus a file, optionally scrolling to a single line. */
   openFile: (path: string, line?: number) => void;
   /**
@@ -53,9 +61,12 @@ interface FileStore {
   activateTab: (path: string) => void;
   /** Close a tab; focus a neighbour if it was active. */
   closeTab: (path: string) => void;
-  /** Close every tab and the file tree, clearing the whole left surface. */
+  /** Close every tab and the sidebar, clearing the whole left surface. */
   closeAll: () => void;
-  toggleTree: () => void;
+  /** Show a sidebar pane, or collapse the sidebar if it is already showing. */
+  togglePanel: (panel: SidePanel) => void;
+  /** Show a sidebar pane unconditionally. */
+  showPanel: (panel: SidePanel) => void;
   /**
    * When true, returning to the overview / a tour intro keeps open files and
    * the tree instead of closing them. Persisted to localStorage.
@@ -88,7 +99,7 @@ export function FileProvider({
   const [highlight, setHighlight] = useState<LineRange | null>(null);
   const [context, setContext] = useState<LineRange | null>(null);
   const [highlightPath, setHighlightPath] = useState<string | null>(null);
-  const [treeOpen, setTreeOpen] = useState(false);
+  const [panel, setPanel] = useState<SidePanel | null>(null);
   const [keepFilesOpen, setKeepFilesOpenState] = useState(readKeepFilesOpen);
 
   const openRange = useCallback(
@@ -135,10 +146,15 @@ export function FileProvider({
     setHighlight(null);
     setContext(null);
     setHighlightPath(null);
-    setTreeOpen(false);
+    setPanel(null);
   }, []);
 
-  const toggleTree = useCallback(() => setTreeOpen((v) => !v), []);
+  const togglePanel = useCallback(
+    (next: SidePanel) => setPanel((current) => (current === next ? null : next)),
+    [],
+  );
+
+  const showPanel = useCallback((next: SidePanel) => setPanel(next), []);
 
   const setKeepFilesOpen = useCallback((value: boolean) => {
     setKeepFilesOpenState(value);
@@ -157,13 +173,14 @@ export function FileProvider({
       highlight,
       context,
       highlightPath,
-      treeOpen,
+      panel,
       openFile,
       openRange,
       activateTab,
       closeTab,
       closeAll,
-      toggleTree,
+      togglePanel,
+      showPanel,
       keepFilesOpen,
       setKeepFilesOpen,
     }),
@@ -174,13 +191,14 @@ export function FileProvider({
       highlight,
       context,
       highlightPath,
-      treeOpen,
+      panel,
       openFile,
       openRange,
       activateTab,
       closeTab,
       closeAll,
-      toggleTree,
+      togglePanel,
+      showPanel,
       keepFilesOpen,
       setKeepFilesOpen,
     ],

@@ -1,23 +1,38 @@
 /**
- * The left code surface: an activity bar with a folder button that toggles the
- * file tree, the (resizable) tree, and a tabbed read-only code viewer.
+ * The left surface: an activity bar, one (resizable) navigation pane, and a
+ * tabbed read-only code viewer.
  *
- * When no file is open the surface collapses to just the activity bar, giving
- * the right-hand content full width.
+ * The activity bar selects which navigation pane is showing — the repository's
+ * source files, or the authored documentation tree from `.tour/docs`. Clicking
+ * the active button collapses the pane again.
+ *
+ * When no file is open and no pane is showing, the surface collapses to just
+ * the activity bar, giving the right-hand content full width.
  */
 
 import { useCallback, useMemo, useRef, useState } from 'react';
-import type { SourceFile } from '../../src/model/types';
+import type { Doc, SourceFile } from '../../src/model/types';
 import { useFileStore } from './fileStore';
 import { FileTree } from './FileTree';
 import { CodeViewer } from './code/CodeViewer';
 import { Tabs } from './code/Tabs';
 import { ExplorerIcon } from './tree/icons';
+import { DocTree } from './docs/DocTree';
+import { DocsIcon } from './docs/icons';
 
 const MIN_TREE = 160;
 const MAX_TREE = 520;
 
-export function ExplorerPane(): JSX.Element {
+interface ExplorerPaneProps {
+  docs: Doc[];
+  /** Slug of the doc currently open on the right, so the tree can mark it. */
+  activeDocSlug: string | null;
+}
+
+export function ExplorerPane({
+  docs,
+  activeDocSlug,
+}: ExplorerPaneProps): JSX.Element {
   const {
     files,
     tabs,
@@ -25,9 +40,9 @@ export function ExplorerPane(): JSX.Element {
     highlight,
     context,
     highlightPath,
-    treeOpen,
+    panel,
     openFile,
-    toggleTree,
+    togglePanel,
   } = useFileStore();
 
   const [treeWidth, setTreeWidth] = useState(240);
@@ -78,25 +93,42 @@ export function ExplorerPane(): JSX.Element {
     <div className="explorer">
       <div className="activity-bar">
         <button
-          className={`activity-btn${treeOpen ? ' active' : ''}`}
-          onClick={toggleTree}
+          className={`activity-btn${panel === 'files' ? ' active' : ''}`}
+          onClick={() => togglePanel('files')}
           title="Toggle file tree"
           aria-label="Toggle file tree"
-          aria-pressed={treeOpen}
+          aria-pressed={panel === 'files'}
         >
           <ExplorerIcon />
         </button>
+        {docs.length > 0 && (
+          <button
+            className={`activity-btn${panel === 'docs' ? ' active' : ''}`}
+            onClick={() => togglePanel('docs')}
+            title="Toggle documentation"
+            aria-label="Toggle documentation"
+            aria-pressed={panel === 'docs'}
+          >
+            <DocsIcon />
+          </button>
+        )}
       </div>
 
-      {treeOpen && (
+      {panel !== null && (
         <>
           <div className="pane tree" style={{ width: treeWidth, flexBasis: treeWidth }}>
-            <div className="pane-header">Explorer</div>
-            <FileTree
-              files={files}
-              activePath={activePath}
-              onSelect={(path) => openFile(path)}
-            />
+            <div className="pane-header">
+              {panel === 'docs' ? 'Documentation' : 'Explorer'}
+            </div>
+            {panel === 'docs' ? (
+              <DocTree docs={docs} activeSlug={activeDocSlug} />
+            ) : (
+              <FileTree
+                files={files}
+                activePath={activePath}
+                onSelect={(path) => openFile(path)}
+              />
+            )}
           </div>
           <div
             className="resize-handle"

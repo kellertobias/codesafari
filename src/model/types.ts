@@ -119,6 +119,32 @@ export interface Tour {
   steps: TourStep[];
 }
 
+/**
+ * A standalone documentation page, from `.tour/docs/**\/*.md`.
+ *
+ * Docs are free-form long-form prose — in-depth concept write-ups that don't
+ * belong to a tour, a component, or a one-paragraph glossary entry. They are
+ * addressable via `doc:<slug>` links from any other Markdown body.
+ */
+export interface Doc {
+  /**
+   * Path-derived slug, relative to `.tour/docs` and without the extension —
+   * e.g. `architecture/event-loop`. An `index.md` takes its directory's slug,
+   * so `architecture/index.md` is the `architecture` section's own page.
+   */
+  slug: string;
+  /** Frontmatter `title`, else the leading `# Heading`, else the file name. */
+  title: string;
+  /** Frontmatter `navTitle`: a shorter label for the navigation tree. */
+  navTitle?: string;
+  /** Sort key among siblings in the navigation tree. */
+  order?: number;
+  /** Markdown body, with the leading `# Heading` removed if it became `title`. */
+  body: string;
+  /** Source path of the authoring file, relative to project root. */
+  sourcePath: string;
+}
+
 /** A glossary concept, addressable via `glossary:<slug>` links. */
 export interface GlossaryConcept {
   slug: string;
@@ -191,6 +217,7 @@ export interface Manifest {
   components: Component[];
   tours: Tour[];
   glossary: GlossaryConcept[];
+  docs: Doc[];
   callouts: SourceCallout[];
   examples: Example[];
   /** Included source files, present in exported manifests. */

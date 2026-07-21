@@ -87,6 +87,7 @@ button {
 }
 .topbar .brand .dot {
   color: var(--pink);
+  font-weight: 700;
 }
 .topbar nav {
   display: flex;
@@ -400,10 +401,33 @@ button {
   color: var(--fg);
   background: var(--bg-elev);
 }
-.tree-file-row.active {
+.tree-file-row.active,
+.tree-doc-row.active {
   color: var(--fg);
   background: var(--highlight);
   box-shadow: inset 2px 0 0 0 var(--highlight-border);
+}
+
+/* Doc rows are anchors (real links) rather than buttons, so they need the
+   underline and inherited-color reset the button rows get for free. */
+.tree-doc-row {
+  text-decoration: none;
+}
+/* On a section page the chevron toggles while the rest of the row navigates,
+   so the chevron needs its own, slightly larger, hit area. */
+.tree-chevron-hit {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  margin: 0 -3px;
+  padding: 0 3px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.tree-chevron-hit:hover {
+  background: var(--border);
 }
 
 /* Indent guides: one vertical line per nesting level. */
@@ -608,6 +632,26 @@ button {
   margin-right: 3px;
   font-size: 0.85em;
   color: var(--fg-dim);
+}
+
+/* Documentation links navigate the right-hand region. */
+.md a.doc-link {
+  color: var(--accent);
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+.md a.doc-link::before {
+  content: '\1F4C4'; /* 📄 */
+  margin-right: 4px;
+  font-size: 0.8em;
+  opacity: 0.75;
+}
+
+/* Ancestor trail above a documentation page's title. */
+.doc-breadcrumb {
+  color: var(--fg-dim);
+  font-size: 13px;
 }
 
 /* ---- Glossary side-panel (right drawer) ---- */

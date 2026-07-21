@@ -12,6 +12,7 @@ import { Landing } from './pages/Landing';
 import { ComponentDetail } from './pages/ComponentDetail';
 import { TourIntro } from './pages/TourIntro';
 import { TourRunner } from './pages/TourRunner';
+import { DocPage } from './pages/DocPage';
 
 export function App(): JSX.Element {
   const [manifest, setManifest] = useState<Manifest | null>(null);
@@ -79,7 +80,7 @@ function Shell({
   manifest: Manifest;
   route: ReturnType<typeof useRoute>;
 }): JSX.Element {
-  const { closeAll, keepFilesOpen, setKeepFilesOpen } = useFileStore();
+  const { closeAll, showPanel, keepFilesOpen, setKeepFilesOpen } = useFileStore();
   const { openGlossary } = useGlossary();
 
   // On the overview (no segments) or a tour intro (`/tour/:slug`, not `/run`),
@@ -92,6 +93,15 @@ function Shell({
     // the overview-like flag flips.
   }, [route.raw, isOverviewLike, keepFilesOpen, closeAll]);
 
+  // Landing on a doc page reveals the docs tree, so its siblings and the rest
+  // of the structure are visible without hunting for the activity-bar button.
+  const onDocPage = head === 'doc';
+  useEffect(() => {
+    if (onDocPage) showPanel('docs');
+  }, [onDocPage, showPanel]);
+
+  const activeDocSlug = onDocPage ? route.segments.slice(1).join('/') : null;
+
   return (
     <div className="app">
       {isDevMode() && (
@@ -99,10 +109,11 @@ function Shell({
       )}
       <header className="topbar">
         <a className="brand" href={href('/')}>
-          code<span className="dot">·</span>safari
+          code<span className="dot">:</span>safari
         </a>
         <nav>
           <a href={href('/')}>Overview</a>
+          {manifest.docs.length > 0 && <a href={href('/doc')}>Docs</a>}
           {manifest.glossary.length > 0 && (
             <button className="navlink" onClick={() => openGlossary()}>
               Glossary
@@ -130,7 +141,7 @@ function Shell({
         )}
       </header>
       <div className="body">
-        <ExplorerPane />
+        <ExplorerPane docs={manifest.docs} activeDocSlug={activeDocSlug} />
         <main className="route">
           <Router manifest={manifest} segments={route.segments} />
         </main>
@@ -159,6 +170,9 @@ function Router({
       return <Landing manifest={manifest} />;
     case 'component':
       return <ComponentDetail manifest={manifest} slug={a ?? ''} />;
+    // Doc slugs are folder paths, so they span every remaining segment.
+    case 'doc':
+      return <DocPage manifest={manifest} slug={segments.slice(1).join('/')} />;
     case 'tour':
       if (b === 'run') return <TourRunner manifest={manifest} slug={a ?? ''} />;
       return <TourIntro manifest={manifest} slug={a ?? ''} />;
