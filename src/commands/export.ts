@@ -4,9 +4,12 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { buildManifest } from '../manifest/build.js';
 import { viewerBuilt, viewerDistDir } from './paths.js';
+import { ignoreOutput } from './gitignore.js';
 
 export interface ExportOptions {
   out: string;
+  /** Add the output directory to the project's `.gitignore`. Defaults to true. */
+  ignore?: boolean;
 }
 
 export interface ExportResult {
@@ -68,6 +71,11 @@ export async function runExport(
     `window.__CODESAFARI_MANIFEST__ = ${json};`,
     'utf8',
   );
+
+  if (options.ignore !== false) {
+    const entry = await ignoreOutput(resolved, outDir);
+    if (entry) console.log(`Added ${entry} to .gitignore (pass --no-ignore to keep it tracked).`);
+  }
 
   console.log(`Exported static site to ${outDir}`);
   console.log(`  ${manifest.files.length} source file(s) bundled.`);

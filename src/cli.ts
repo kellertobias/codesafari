@@ -55,8 +55,9 @@ async function main(): Promise<void> {
     .argument('[root]', 'project directory', process.cwd())
     .description('Write a self-contained static site')
     .option('-o, --out <dir>', 'output directory', 'codesafari-site')
-    .action(async (root: string, opts: { out: string }) => {
-      const result = await runExport(root, { out: opts.out });
+    .option('--no-ignore', 'do not add the output directory to .gitignore')
+    .action(async (root: string, opts: { out: string; ignore: boolean }) => {
+      const result = await runExport(root, { out: opts.out, ignore: opts.ignore });
       if (!result.ok) process.exitCode = 1;
     });
 

@@ -42,4 +42,19 @@ describe('IgnoreMatcher', () => {
     expect(m.ignores(path.join(root, 'node_modules', 'x', 'i.js'))).toBe(true);
     expect(m.ignores(path.join(root, '.git', 'config'))).toBe(true);
   });
+
+  it('always ignores secret files, even unlisted or under .tour/', async () => {
+    const m = await IgnoreMatcher.load(root);
+    expect(m.ignores(path.join(root, '.env'))).toBe(true);
+    expect(m.ignores(path.join(root, '.env.production'))).toBe(true);
+    expect(m.ignores(path.join(root, 'config', 'server.key'))).toBe(true);
+    expect(m.ignores(path.join(root, 'certs', 'tls.pem'))).toBe(true);
+    expect(m.ignores(path.join(root, '.ssh', 'id_ed25519'))).toBe(true);
+    expect(m.ignores(path.join(root, '.tour', '.env'))).toBe(true);
+  });
+
+  it('keeps example env templates', async () => {
+    const m = await IgnoreMatcher.load(root);
+    expect(m.ignores(path.join(root, '.env.example'))).toBe(false);
+  });
 });
