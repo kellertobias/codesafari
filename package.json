@@ -42,6 +42,7 @@
   "files": [
     "dist",
     "viewer-dist",
+    "skills",
     "README.md",
     "LICENSE"
   ],

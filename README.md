@@ -42,6 +42,7 @@ npm install --save-dev @tobisk/codesafari
 | `codesafari dev [root] --port 4317` | Build the manifest, serve the viewer, watch files, and live-reload. |
 | `codesafari export [root] --out codesafari-site` | Write a frozen manifest, bundled source content, and static assets. |
 | `codesafari validate [root]` | Parse all content and report errors (bad frontmatter, dangling links, unresolved steps, broken Mermaid). |
+| `codesafari insert <spec> [root] --dry-run` | Write `@tour` comments into source files from a JSON spec. |
 
 `root` defaults to the current directory. It must contain a `.tour/` folder.
 
@@ -145,9 +146,59 @@ Given a step comment, the target range is chosen by what directly follows it:
 - Directly before another **block** → that block.
 - Otherwise → the comment plus the next `defaultSnippetLines` lines (tour-level value overrides the project default).
 
+## Bulk-inserting steps
+
+Placing `@tour` comments by hand is fiddly: consecutive `//`/`#` lines merge
+into one comment block and only the first line is read as the header, so a
+comment written under a doc comment — or under a Rust `#[derive(...)]`, which
+the scanner also sees as a comment — silently stops being a step.
+
+`insert` applies a JSON spec instead:
+
+```json
+[{
+  "file": "src/auth/middleware.ts",
+  "line": 42,
+  "match": "export function requireSession",
+  "tour": "authentication",
+  "order": "10",
+  "title": "The edge guard",
+  "body": ["Every request passes through here first."]
+}]
+```
+
+```bash
+npx @tobisk/codesafari insert steps.json --dry-run
+npx @tobisk/codesafari insert steps.json
+```
+
+`match` is the anchor and `line` only a hint — if the hint has drifted, the
+match must still resolve uniquely nearby or the entry is reported rather than
+guessed. The comment marker comes from the file type, the block is hoisted
+above doc comments and attributes (but stays below decorators), insertions are
+applied bottom-up, nothing is written unless every entry resolves, and entries
+already present are skipped — so a corrected spec can be re-run safely. Use
+`"tour": "comment"` for a callout.
+
 ## Diagrams
 
 Fenced ```` ```mermaid ```` blocks in any `.tour/` Markdown or source-comment body are rendered locally to SVG — on demand during `dev`, and pre-rendered into static assets during `export`. Rendering never touches the network. `validate` reports the file and block for any diagram that fails to render.
+
+## Authoring with a coding agent
+
+The package ships an agent skill, [`skills/authoring-code-safaris`](skills/authoring-code-safaris/SKILL.md),
+for generating a CodeSafari in *your* repository. It covers the content model
+(glossary vs. components vs. tours), how to write `.tour/index.md`, which
+components are worth a page, and which tours to generate — with a baseline of
+authentication, the data layer, and the API for any server codebase. It asks
+its clarifying questions up front, in one round, before writing anything.
+
+```bash
+mkdir -p .claude/skills
+cp -R node_modules/@tobisk/codesafari/skills/authoring-code-safaris .claude/skills/
+```
+
+See [`skills/README.md`](skills/README.md) for Claude Code and Codex setup.
 
 ## Ignore rules
 

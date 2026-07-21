@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { Command } from 'commander';
 import { runValidate } from './commands/validate.js';
 import { runExport } from './commands/export.js';
+import { runInsert } from './commands/insert.js';
 import { runDev } from './server/devServer.js';
 import { packageRoot } from './commands/paths.js';
 
@@ -72,6 +73,31 @@ async function main(): Promise<void> {
       const result = await runValidate(root);
       if (!result.ok) process.exitCode = 1;
     });
+
+  program
+    .command('insert')
+    .argument('<spec>', 'JSON file describing the comments to insert')
+    .argument('[root]', 'project directory', process.cwd())
+    .description('Insert @tour comments into source files from a spec')
+    .option('--dry-run', 'resolve and report, but write nothing')
+    .option('--radius <lines>', 'how far from the line hint to search', '40')
+    .action(
+      async (
+        spec: string,
+        root: string,
+        opts: { dryRun?: boolean; radius: string },
+      ) => {
+        const radius = Number.parseInt(opts.radius, 10);
+        if (!Number.isInteger(radius) || radius < 0) {
+          program.error(`Invalid --radius value: ${opts.radius}`);
+        }
+        const result = await runInsert(root, spec, {
+          dryRun: opts.dryRun,
+          radius,
+        });
+        if (!result.ok) process.exitCode = 1;
+      },
+    );
 
   // With no command, print help rather than doing nothing.
   if (process.argv.length <= 2) {
