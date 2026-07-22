@@ -28,8 +28,11 @@ jobs:
   publish:
     name: Publish to npm (OIDC)
     # GitHub-only. The Forgejo origin also reads .github/workflows and creates
-    # the `v*` tag, so guard against this running there.
-    if: ${{ github.server_url == 'https://github.com' }}
+    # the `v*` tag, so guard against this running there. Two independent checks:
+    # the server URL, and the repo slug (GitHub mirror is `kellertobias/...`,
+    # Forgejo is `opensource/...`) so publishing can never fire on Forgejo even
+    # if that instance reports a GitHub-compatible server_url.
+    if: ${{ github.server_url == 'https://github.com' && github.repository == 'kellertobias/codesafari' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout tag
@@ -38,13 +41,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           registry-url: "https://registry.npmjs.org"
 
-      # Trusted publishing (OIDC) requires a recent npm CLI. Pin to the latest
-      # so the runner's bundled npm can't be too old to exchange the token.
+      # Trusted publishing (OIDC) needs npm >= 11.5.1. Pin the 11.x line: it
+      # supports OIDC and runs on Node 22. (npm@latest is 12.x, which requires
+      # Node >= 22.22.2 and would fail to install on the Node 22 line here.)
       - name: Upgrade npm (OIDC trusted publishing support)
-        run: npm install -g npm@latest
+        run: npm install -g npm@11
 
       - name: Install dependencies
         run: npm ci
