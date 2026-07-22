@@ -1,3 +1,7 @@
+## <small>1.0.1 (2026-07-22)</small>
+
+* fix: publish on Node 22 with npm 11 and harden the Forgejo guard ([2d10b8f](https://git.tokenet.de/opensource/codesafari/commit/2d10b8f))
+
 ## 1.0.0 (2026-07-21)
 
 * fix: releases ([bebaf3c](https://git.tokenet.de/opensource/codesafari/commit/bebaf3c))

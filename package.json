@@ -1,6 +1,6 @@
 {
   "name": "@tobisk/codesafari",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Turn a .tour/ folder plus inline @tour source comments into a local, offline code-tour website.",
   "keywords": [
     "code-tour",
